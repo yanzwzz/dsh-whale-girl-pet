@@ -1,4 +1,4 @@
-# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
+﻿# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <img src="./assets/preview/preview-idle.gif" width="150" alt="idle">
-  <img src="./assets/preview/preview-work.gif" width="150" alt="working">
-  <img src="./assets/preview/preview-done.gif" width="150" alt="celebrating">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-idle.gif" width="150" alt="idle">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-work.gif" width="150" alt="working">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-done.gif" width="150" alt="celebrating">
 </p>
 
 > A chibi blue-haired whale-girl maid ("DeepSeek-chan") living in the bottom-right corner of your [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI. She types along while you work, slacks off when you do, celebrates when tasks finish — and can report today's token usage & cost, check tomorrow's weather, or eat a "TOKEN" fish snack.
@@ -66,7 +66,7 @@ All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank fram
 ```sh
 dsh plugin --profile web add dsh-whale-girl-pet
 # or from a tarball
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.1.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.2.tgz
 ```
 
 Restart `dsh web` and refresh the browser — the pet appears bottom-right.
@@ -112,8 +112,7 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 
 Enjoy this pet? Feed her a Token to say thanks (completely voluntary, no features affected)～
 
-<!-- QR image: relative path works locally & on GitHub; swap to unpkg absolute URL for the npm page after publishing -->
-<img src="./assets/preview/qr-donate.png" width="180" alt="Feed a Token">
+<img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/qr-donate.png" width="180" alt="Feed a Token">
 
 ---
 

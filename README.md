@@ -1,4 +1,4 @@
-# 🐋 dsh-whale-girl-pet — DeepSeek 娘桌宠
+﻿# 🐋 dsh-whale-girl-pet — DeepSeek 娘桌宠
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <img src="./assets/preview/preview-idle.gif" width="150" alt="待机">
-  <img src="./assets/preview/preview-work.gif" width="150" alt="工作">
-  <img src="./assets/preview/preview-done.gif" width="150" alt="收工庆祝">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-idle.gif" width="150" alt="待机">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-work.gif" width="150" alt="工作">
+  <img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/preview-done.gif" width="150" alt="收工庆祝">
 </p>
 
 > 一只住在 DeepSeek Harness Web 界面右下角的「Q 版蓝发鲸鱼女仆（DeepSeek 娘）」桌宠。
@@ -71,7 +71,7 @@
 dsh plugin --profile web add dsh-whale-girl-pet
 
 # 或从本地 tarball 安装
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.1.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.2.tgz
 ```
 
 重启 `dsh web`，刷新浏览器页面，桌宠出现在右下角。
@@ -117,8 +117,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.1.1.tgz
 
 喜欢这只桌宠的话，可以投喂她吃口 Token（完全自愿，不影响任何功能）～
 
-<!-- 收款码图片：本地/GitHub 用相对路径；npm 页面发布后如需显示，改回 unpkg 绝对链接 -->
-<img src="./assets/preview/qr-donate.png" width="180" alt="投喂 Token">
+<img src="https://raw.githubusercontent.com/yanzwzz/dsh-whale-girl-pet/main/assets/preview/qr-donate.png" width="180" alt="投喂 Token">
 
 ---
 
