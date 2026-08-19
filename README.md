@@ -1,8 +1,8 @@
-# 🐋 dsh-whale-pet — DeepSeek 娘桌宠
+# 🐋 dsh-whale-girl-pet — DeepSeek 娘桌宠
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
-  <img alt="version" src="https://img.shields.io/npm/v/dsh-whale-pet?label=npm&color=blue">
+  <img alt="version" src="https://img.shields.io/npm/v/dsh-whale-girl-pet?label=npm&color=blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-orange">
   <img alt="assets" src="https://img.shields.io/badge/assets-46%2B%20animations-ff69b4">
 </p>
@@ -68,10 +68,10 @@
 
 ```sh
 # 从 npm 市场安装
-dsh plugin --profile web add dsh-whale-pet
+dsh plugin --profile web add dsh-whale-girl-pet
 
 # 或从本地 tarball 安装
-dsh plugin --profile web add dsh-whale-pet-0.1.0.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.1.tgz
 ```
 
 重启 `dsh web`，刷新浏览器页面，桌宠出现在右下角。

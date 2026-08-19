@@ -23,7 +23,7 @@
 
 - insert:
     - id: pet                     # 插件行 id（唯一）
-      name: 'dsh-whale-pet'       # 模块名：解析到 lib/index.js（dsh-pet 的合并 fork）
+      name: 'dsh-whale-girl-pet'   # 模块名：解析到 lib/index.js（dsh-pet 的合并 fork）
       config:
         size: 260                 # 宠物显示高度（px）—— 目前未传到 client
         position: bottom-right    # 默认角落位置 —— 目前未传到 client
