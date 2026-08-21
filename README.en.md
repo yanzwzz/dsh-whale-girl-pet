@@ -1,4 +1,4 @@
-﻿# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
+# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
@@ -66,7 +66,7 @@ All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank fram
 ```sh
 dsh plugin --profile web add dsh-whale-girl-pet
 # or from a tarball
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.2.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.3.tgz
 ```
 
 Restart `dsh web` and refresh the browser — the pet appears bottom-right.

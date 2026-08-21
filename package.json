@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-girl-pet",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "🐋 DeepSeek 娘桌宠：住进 DeepSeek Harness Web 界面的蓝发鲸鱼女仆。工作链路（开工/轮播/收工庆祝）、任务完成统计气泡（用时/消耗/花费）、睡眠系统、时间感知、余额/天气/喂食按钮与完整设置面板。A whale-girl desktop pet for the DeepSeek Harness Web UI.",
   "keywords": [
     "dsh",
