@@ -66,7 +66,7 @@ All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank fram
 ```sh
 dsh plugin --profile web add dsh-whale-girl-pet
 # or from a tarball
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.3.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.4.tgz
 ```
 
 Restart `dsh web` and refresh the browser — the pet appears bottom-right.

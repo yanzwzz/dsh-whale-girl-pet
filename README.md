@@ -71,7 +71,7 @@
 dsh plugin --profile web add dsh-whale-girl-pet
 
 # 或从本地 tarball 安装
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.3.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.4.tgz
 ```
 
 重启 `dsh web`，刷新浏览器页面，桌宠出现在右下角。
