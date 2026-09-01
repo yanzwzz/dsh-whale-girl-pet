@@ -1,4 +1,4 @@
-# 🐋 dsh-whale-girl-pet — DeepSeek 娘桌宠
+﻿# 🐋 dsh-whale-girl-pet — DeepSeek 娘桌宠
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
@@ -71,7 +71,7 @@
 dsh plugin --profile web add dsh-whale-girl-pet
 
 # 或从本地 tarball 安装
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.4.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.1.2.tgz
 ```
 
 重启 `dsh web`，刷新浏览器页面，桌宠出现在右下角。
