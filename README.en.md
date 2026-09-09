@@ -1,4 +1,4 @@
-﻿# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
+# 🐋 dsh-whale-girl-pet — DeepSeek-chan Desktop Pet
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
@@ -29,17 +29,30 @@
 | ⏰ Long task | "Checking watch": sighs at the clock (threshold configurable) |
 
 ### 📊 Per-task completion bubble
+Multi-line report at the end of every task, with the cost split into **cache hit / cache miss / output**:
 ```
 Task done!
 Duration 2m35s
 Tokens 1.2M
 Cost ≈¥3.21
+· cache hit ≈¥0.28
+· cache miss ≈¥0.02
+· output ≈¥2.91
 ```
-- Estimated from official DeepSeek pricing, **peak/off-peak aware** (peak 9:00-12:00 / 14:00-18:00 Beijing, since 2026-08-17)
+- Estimated from official DeepSeek pricing, priced **per usage event by its own timestamp**, so a task spanning a price change or a peak/off-peak boundary still adds up
+- Peak/off-peak: weekdays 9:00-12:00 / 14:00-18:00 Beijing time are peak (2x the off-peak price); weekends are off-peak all day
+- **Flash series repriced from 2026-09-10 12:00 Beijing**: off-peak 0.02 / 1 / 4 CNY per million tokens, peak 2x; pro unchanged
+- Cache writes are billed at the cache-miss price (matching `prompt_cache_miss_tokens`)
 - Includes subagent sessions
 
 ### 💰 Balance & today's usage (💸 button)
-Account balance + today's tokens + today's cost (peak/off-peak split), via the official balance API.
+Account balance + today's tokens + today's cost (peak/off-peak split, plus the hit/miss/output breakdown), via the official balance API.
+
+### 💴 Session cost pill (under the composer)
+A cost pill next to the shipped token-usage pill shows the session's running cost; click it for the **cache hit / cache miss / output** breakdown, the peak vs off-peak totals, the priced-call count, and a live peak/off-peak badge. It shares one pricing kernel (`lib/usage.js`) and the `costUsage` projection with the task bubble and the balance button.
+
+### 💴 Turn cost pill (each reply's action row)
+Next to the shipped "Usage X tok" pill, a "Cost ≈¥x.xx" pill shows **this turn's** cache-hit / cache-miss / output amounts plus its peak/off-peak split, read from the same `costUsage` projection (`byTurn`).
 
 ### ☁️ Tomorrow's weather (☁️ button)
 Tomorrow-first forecast; supports Chinese city names / auto-locate; WMO codes mapped to Chinese locally.
@@ -99,6 +112,17 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 - **Interaction**: click responses ×3, drag, head pat (double-click)
 
 > The laptop carries a whale-silhouette logo; work-chain animations are generated in one session for consistency.
+
+---
+
+## 📝 Changelog
+
+### 0.2.0
+- **Session cost pill**: under the composer, next to the shipped token-usage pill; click for the cache-hit / cache-miss / output breakdown, peak vs off-peak totals, priced-call count, and a live peak/off-peak badge.
+- **Turn cost pill**: in each reply's action row, next to the shipped "Usage X tok" pill; opens this turn's three-bucket cost and peak/off-peak split.
+- **Accounting fixes for DSH 0.1.5**: reads `assistant/message.usage` plus usage embedded in `assistant/message` / `assistant/attempt` streams; retries are billed as two calls; weekends are off-peak all day.
+- **Pricing update**: flash series repriced from 2026-09-10 12:00 Beijing (off-peak 0.02 / 1 / 4 CNY per million tokens, peak 2x); a session spanning a price change is billed per event timestamp.
+- Usage/pricing moved into `lib/usage.js` (zero-dependency) and `lib/cost-projection.js`, with 32 unit tests.
 
 ---
 
