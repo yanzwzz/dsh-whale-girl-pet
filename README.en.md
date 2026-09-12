@@ -45,7 +45,51 @@ Cost ≈¥3.21
 - Cache writes are billed at the cache-miss price (matching `prompt_cache_miss_tokens`)
 - Includes subagent sessions
 
-### 💰 Balance & today's usage (💸 button)
+### 📈 Usage dashboard · cost by time (📊 button)
+The fourth button beside the pet opens a **hand-written inline SVG dashboard (zero chart dependencies)** that answers "when did the money go?".
+
+**Two views × two metrics**
+
+| | Today by hour | Last N days |
+|---|---|---|
+| X axis | Each **Beijing hour** of today so far | The last N **Beijing days** (N configurable 1–30) |
+| Y axis | Cost / tokens for that hour | Cost / tokens for that day |
+| Toggle | "cost ↔ tokens", plus a "⟳" refresh | same |
+
+**How to read it**
+
+- **Stacked bars**: each bar splits into cache hit (blue) / cache miss (orange) / output (purple) → see at a glance whether a period was input-heavy or output-heavy
+- **Structured scale**: 4 Y-axis ticks + gridlines; value labels only on the tallest few bars plus the current one (all bars when ≤12 in token view)
+- **Peak band**: peak-rate hours (rate ×2) get an orange background band, so bar colour is free to encode the three buckets
+- **Current period** is outlined
+- Hover any bar for a full tooltip: cost, tokens, per-bucket amounts, calls, peak/off-peak
+
+**Summary cards (5)**
+
+`Last 24h` · `Today` · **`Average`** · `Input` · `Output`
+
+- **Average** reads "avg per hour ¥0.14 / avg per day ¥6.84" and follows the current view and metric; it averages exactly the bars on screen
+- **Cache hit rate** uses the prompt-side formula `cacheRead / (input + cacheWrite + cacheRead)`
+- Each card carries a sub-line with tokens, call count or output cost
+
+**Placing the panel**
+
+- Default size **720×480**, default position **centered in the viewport** (shrinks to `viewport − 24` on small windows)
+- **Drag the header** to move it, **drag the bottom-right corner** to resize (from 300×200)
+- Position and size persist in `localStorage`; **double-click the header** to reset to the default size and centered position
+- The stored layout is versioned, so changing the defaults invalidates old memory instead of being shadowed by it
+
+**Where the numbers come from**
+
+- **Live**: the host folds `ctx.on('session/event')` incrementally — O(1) per event, no polling, no disk writes
+- **History**: at boot the plugin backfills persisted sessions via `sessionPersistence` (so this morning survives a restart); the panel footer reports how many sessions/events were scanned
+- **Deduplication**: both paths share a per-session seen-seq set plus a call identity (`message.id` / seq), so order never double-counts; retries are billed as two calls
+- A failed backfill only degrades to "this run only" and says so in the panel footer
+- Read-only endpoint: `GET /api/whale-pet/usage` (optional `?hours=1..24&days=1..30`), `no-store`, ~10 KB
+
+**Robustness**: the portal container is validated by `portalContainer()` (falls back to inline rendering, avoiding React `#200`, which would otherwise take down the whole `shell.overlay` entry), and the dashboard sits inside an error boundary.
+
+### 💰 Balance & today's usage (💰 button)
 Account balance + today's tokens + today's cost (peak/off-peak split, plus the hit/miss/output breakdown), via the official balance API.
 
 ### 💴 Session cost pill (under the composer)
@@ -67,7 +111,7 @@ Auto-sleeps after 5 idle minutes (fall asleep → sleeping loop → woken up).
 - 8:00–10:00 groggy · 12:00 lunch box (once/day) · 23:00–3:00 dozing off
 
 ### ⚙️ Settings panel (DSH Settings → Pet Config)
-Pomodoro (interval adjustable) · late-night care · random chatter · **roam toggle** · **button side (left/right)** · long-task threshold · weather city. All live, persisted to `settings.yaml`.
+Pomodoro (interval adjustable) · late-night care · random chatter · **roam toggle** · **button side (left/right)** · **dashboard history backfill** · **dashboard window days** · long-task threshold · weather city. All live, persisted to `settings.yaml`.
 
 ### 🎨 46+ transparent animations
 All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank frames, unified ground alignment, `prefers-reduced-motion` friendly.
@@ -79,10 +123,12 @@ All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank fram
 ```sh
 dsh plugin --profile web add dsh-whale-girl-pet
 # or from a tarball
-dsh plugin --profile web add dsh-whale-girl-pet-0.1.2.tgz
+dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ```
 
 Restart `dsh web` and refresh the browser — the pet appears bottom-right.
+
+> **⚠️ Restarting `dsh web` is required after any change under `lib/`**: DSH loads a plugin's browser half into memory at boot rather than reading it from disk per request, so refreshing the page alone will not pick up new code (host routes and pricing behave the same way).
 
 ---
 
@@ -96,7 +142,9 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 | Late-night care | 23:00-05:00 reminder every 20 min | on |
 | Random chatter | Random DS memes | on |
 | Roam | Disable random wandering | on |
-| Button side | ☁️💰🍪 on left/right of pet | left |
+| Button side | ☁️💰🍪📊 on left/right of pet | left |
+| Dashboard history backfill | Off = only count this run | on |
+| Dashboard window days | Days kept in the daily trend | 7 |
 | Long-task threshold | Warn after N minutes | 10 min |
 | Weather city | Empty = auto-locate | — |
 
@@ -117,12 +165,67 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 
 ## 📝 Changelog
 
+### 0.3.0
+- **New usage dashboard (📊 button)**: a cost-by-time panel next to the pet
+  - `Today by hour` (Beijing hours) / `Last 7 days` (Beijing days), with a `cost ↔ tokens` toggle
+  - **Stacked three-bucket bars** (cache hit / miss / output) + **4 Y-axis ticks and gridlines**, orange background bands for peak hours, current period outlined
+  - Five summary cards: last 24h / today / **average** (per hour or per day, following the view and metric) / input / output, plus **cache hit rate** (prompt-side) and call count
+  - Default **720×480, centered**; drag the header to move, drag the corner to resize, double-click the header to reset; position/size persist in `localStorage` with a version tag
+  - Live folding plus a **boot-time backfill of persisted sessions** (so this morning survives a restart), deduplicated across both paths; new read-only endpoint `GET /api/whale-pet/usage`
+- **New `lib/usage-ledger.js`**: the time-bucketed ledger (Beijing hour/day buckets, call-identity dedup, replace semantics, retention window), zero dependencies
+- **New settings**: `dashboard history backfill`, `dashboard window days`
+- **Robustness**: the portal container is validated by `portalContainer()` (avoids React `#200`, which used to take down the whole `shell.overlay` entry and make the pet disappear); the dashboard is wrapped in an error boundary
+- Unit tests grew from 32 to **73**: ledger folding, dashboard layout/memory/version migration, chart and canvas structure
+
 ### 0.2.0
 - **Session cost pill**: under the composer, next to the shipped token-usage pill; click for the cache-hit / cache-miss / output breakdown, peak vs off-peak totals, priced-call count, and a live peak/off-peak badge.
 - **Turn cost pill**: in each reply's action row, next to the shipped "Usage X tok" pill; opens this turn's three-bucket cost and peak/off-peak split.
 - **Accounting fixes for DSH 0.1.5**: reads `assistant/message.usage` plus usage embedded in `assistant/message` / `assistant/attempt` streams; retries are billed as two calls; weekends are off-peak all day.
 - **Pricing update**: flash series repriced from 2026-09-10 12:00 Beijing (off-peak 0.02 / 1 / 4 CNY per million tokens, peak 2x); a session spanning a price change is billed per event timestamp.
 - Usage/pricing moved into `lib/usage.js` (zero-dependency) and `lib/cost-projection.js`, with 32 unit tests.
+
+<details>
+<summary>Earlier releases (0.1.x)</summary>
+
+- **0.1.6**: adapt to the DSH 0.1.2-alpha.4 Session API (`snapshotEvents` instead of the `events` getter), fixing costs/usage always reading zero.
+- **0.1.5**: withdraw 0.1.4 and revert to 0.1.2; drop the dependency on the `dsh-settings` `settingsNamespace` export.
+- **0.1.3**: weekends billed off-peak all day (2026-08-23 rule).
+- **0.1.2**: force the `danger-full-access` sandbox policy for weather/balance queries (they need network).
+
+</details>
+
+---
+
+## 🧩 Project layout
+
+```
+dsh-whale-girl-pet/
+├── lib/
+│   ├── index.js            host half: /pet asset route, /api/whale-* endpoints, settings namespace, projections
+│   ├── usage.js            pricing & usage kernel (rate table, event fold, three buckets) ★single source of truth
+│   ├── usage-ledger.js     time-bucketed ledger (Beijing hour/day buckets, dedup, retention) — dashboard data
+│   ├── cost-projection.js  costUsage session projection (cost pills read this)
+│   ├── client.js           browser half: pet, bubbles, button stack, dashboard panel & layout, settings section
+│   └── types/              TypeScript declarations (types only)
+├── assets/thumb/           360×360 playback animations (shipped)
+├── assets/preview/         README previews / donation QR
+├── test/                   unit tests (node --test, not published)
+└── cordis.patch.yml        bundle patch that mounts the plugin row into the DSH config tree
+```
+
+**One pricing kernel**: `lib/usage.js`. The task bubble, the balance button, both cost pills and the dashboard all price through it, so their amounts can never disagree.
+
+---
+
+## 🛠️ Development
+
+```sh
+node --test "test/*.test.mjs"     # 73 tests, zero dependencies, node:test only
+```
+
+- The browser bundle is a **hand-written** `window.__ModuleLoader__.load({ id, factory })` file with no build step: edit `lib/client.js` and restart `dsh web`.
+- To check which bundle the page actually runs, print `localStorage.getItem('dsh-whale-pet.dashboard-layout')` (it carries a version tag).
+- Pricing changes belong with `test/usage.test.mjs` / `test/usage-ledger.test.mjs`; layout changes with `test/dashboard-layout.test.mjs`, which extracts the layout factory **from `client.js` itself** and runs it in a `vm`, so it tests the shipped code rather than a copy.
 
 ---
 

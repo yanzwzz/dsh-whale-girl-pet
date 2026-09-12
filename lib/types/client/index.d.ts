@@ -8,10 +8,14 @@
  *
  * 【对应实现】
  *   lib/client.js 注册四个槽位条目：
- *     - shell.overlay                      桌宠本体（动画 / 气泡 / 按钮）
+ *     - shell.overlay                      桌宠本体（动画 / 气泡 / 按钮组，含 📊 看板与弹窗）
  *     - settings.section                   设置 → 桌宠配置
  *     - conversation.composer.dock         输入框下方的会话费用 pill
  *     - conversation.chat.assistant-actions 每条回复动作行里的本轮费用 pill
+ *
+ *   数据看板（分时段花费）不走槽位：它由 shell.overlay 里的 📊 按钮触发，
+ *   弹窗 portal 到 document.body，位置/尺寸由 useDashboardLayout 管理
+ *   （默认 720×480 视口居中，可拖动/缩放，记忆存 localStorage）。
  *
  * 【注意】
  *   当前 DSH 客户端配置管线尚未打通，apply 实际收到的 config 是空对象；
