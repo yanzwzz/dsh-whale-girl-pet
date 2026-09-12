@@ -197,7 +197,37 @@ test('applySize：双击复位时用显式尺寸覆盖（只有它是显式覆�
   assert.deepEqual(sized, { moved: true, x: 10, y: 20, w: 500, h: 400 });
   // 非法尺寸忽略，不污染布局
   assert.deepEqual(plain(store.applySize({ w: 700 }, { w: 0, h: 10 })), { w: 700 });
-  assert.deepEqual(plain(store.applySize({ w: 700 }, undefined)), { w: 700 });
+  assert.deepEqual(plain(store.applySize({ w: 700 }, undefined)), { w: 700, });
+});
+
+test('applySize 只改尺寸、保留位置语义（回归：曾被误当成"复位"入口）', () => {
+  const store = makeStore();
+  // 空覆盖对象 = 无效尺寸 → 布局原样返回，位置仍是用户拖走的坐标
+  const unchanged = plain(store.applySize({ moved: true, x: 12, y: 34 }, {}));
+  assert.deepEqual(unchanged, { moved: true, x: 12, y: 34 }, '空覆盖不应改动任何字段');
+  assert.equal(store.place({ moved: true, x: 12, y: 34 }, {}).x, 12, 'place 仍会用记忆坐标');
+});
+
+test('复位语义：place 必须收到"空布局"才会回到默认尺寸 + 视口居中', () => {
+  const store = makeStore();
+  // 先造一份"用户拖走 + 放大"的记忆
+  const dragged = store.dragTo({}, { x: 0, y: 0 }, { dx: 300, dy: 200 });
+  const grown = store.resizeTo(dragged, { w: 860, h: 700 });
+  assert.equal(grown.moved, true, '仍处于"被拖过"状态');
+  assert.ok(grown.w > 0 && grown.h > 0, '尺寸有效：' + grown.w + '×' + grown.h);
+
+  // ✅ 正确的复位：内存布局也清空后再落定
+  const reset = store.place({});
+  assert.equal(reset.moved, undefined, '复位后不应再是"被拖过"状态');
+  assert.equal(reset.w, DEFAULT_W);
+  assert.equal(reset.h, DEFAULT_H);
+  assert.equal(reset.x, Math.round((1000 - DEFAULT_W) / 2), '回到水平居中');
+  assert.equal(reset.y, Math.round((800 - DEFAULT_H) / 2), '回到垂直居中');
+
+  // ❌ 反面：把旧布局喂给 place 只会保留旧坐标（这正是曾经的 bug 形态）
+  const notReset = store.place(grown);
+  assert.equal(notReset.x, grown.x, '带着旧布局落定不会改变位置');
+  assert.notEqual(notReset.x, reset.x, '所以"清记忆"必须同时清内存布局');
 });
 
 test('place 的尺寸覆盖参数会改掉 w/h（复位路径）', () => {

@@ -165,6 +165,11 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 
 ## 📝 Changelog
 
+### 0.3.1
+- **Fixed: double-clicking the header no longer reset the panel** (a 0.3.0 regression). It looked like "double-click does nothing, but closing and reopening the panel recenters it": the reset called `place({})`, and that empty object was taken as a **size override** while the position still came from the in-memory layout — so the stored memory was cleared but the panel did not move. The reset now clears the in-memory layout first, then re-places against an empty layout and recenters immediately.
+- **New `scripts/sync-install.ps1` (dev-only)**: syncs the working tree into the installed profile copy, verifies it, and reports whether the running `dsh web` process needs a restart. The profile holds a **copy**, not a symlink, so a forgotten sync produces the confusing "I restarted but nothing changed" symptom (we hit that once while finishing 0.3.0).
+- Unit tests 73 → **75**: two reset-semantics regressions (positive: a cleared layout recenters; negative: placing with a stale layout keeps the old position) plus a jsdom end-to-end pass (drag → double-click reset → drag again → reset again, confirming idempotence).
+
 ### 0.3.0
 - **New usage dashboard (📊 button)**: a cost-by-time panel next to the pet
   - `Today by hour` (Beijing hours) / `Last 7 days` (Beijing days), with a `cost ↔ tokens` toggle

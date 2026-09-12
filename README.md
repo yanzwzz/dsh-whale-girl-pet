@@ -172,6 +172,11 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 
 ## 📝 更新记录
 
+### 0.3.1
+- **修复：双击头部复位失效**（0.3.0 的回归）。表现是"双击后位置不动，但关掉面板再打开才回默认位置"——根因是复位走了 `place({})`，那个空对象被当成**尺寸覆盖参数**，而位置仍取自内存里的旧布局，于是只"清了记忆、没改位置"。现在复位会**先清空内存布局、再按空布局落定**，当场回到默认尺寸 + 视口居中。
+- **新增 `scripts/sync-install.ps1`（开发用）**：把工作区同步到已安装副本并校验，同时判断当前 `dsh web` 进程是否需要重启。profile 里装的是**副本**而非软链，漏同步会造成"重启了但现象没变"的假象（0.3.0 收尾时就踩过一次）。
+- 单测 73 → **75 项**：新增两条复位语义回归（正面：清空后复位回默认居中；反面：带着旧布局落定位置不变），并加了一组 jsdom 端到端验证（拖动 → 双击复位 → 再拖 → 再复位，确认幂等）。
+
 ### 0.3.0
 - **新增「数据看板」（📊 按钮）**：气泡旁的新按钮，点开是分时段花费看板
   - `今日分时`（北京小时轴）/ `近 7 天`（北京日轴）两种视图，`花费 ↔ token` 一键切换
@@ -216,6 +221,8 @@ dsh-whale-girl-pet/
 │   └── types/              TypeScript 类型声明（纯类型，不影响运行时）
 ├── assets/thumb/           360×360 播放用动画（随包发布）
 ├── assets/preview/         README 预览图 / 收款码
+├── scripts/
+│   └── sync-install.ps1    开发用：把工作区同步到已安装副本，并判断要不要重启 dsh web
 ├── test/                   单测（node --test，不发布）
 └── cordis.patch.yml        bundle patch：把插件行挂进 DSH 配置树
 ```
@@ -227,13 +234,19 @@ dsh-whale-girl-pet/
 ## 🛠️ 开发
 
 ```sh
-node --test "test/*.test.mjs"     # 跑单测（73 项，零依赖，只用 node:test）
+node --test "test/*.test.mjs"     # 跑单测（75 项，零依赖，只用 node:test）
 ```
 
-- 客户端 bundle 是**手写**的 `window.__ModuleLoader__.load({ id, factory })` 形态，零构建步骤：改完 `lib/client.js` 直接重启 `dsh web` 即生效。
-- 想看某个改动是否真的被加载：重启后在浏览器控制台跑
-  `fetch('/plugins/??dsh-whale-girl-pet/client.js').then(r=>r.text()).then(t=>console.log(t.length))`，
-  或直接打印 `localStorage.getItem('dsh-whale-pet.dashboard-layout')` 看版本号。
+- 客户端 bundle 是**手写**的 `window.__ModuleLoader__.load({ id, factory })` 形态，零构建步骤。
+- ⚠️ **改完必须同步到已安装副本，再重启 `dsh web`**：profile 里装的是**副本**（不是软链），插件 bundle 又在进程启动时就载入内存。漏掉同步会出现"重启了但现象没变"这种极难查的假象（本仓库开发过程中真的踩过一次）。脚本一步搞定，并顺带判断当前进程是否需要重启：
+
+  ```powershell
+  pwsh -File scripts/sync-install.ps1            # 同步 + 校验 + 提示是否需重启
+  pwsh -File scripts/sync-install.ps1 -CheckOnly # 只校验（有差异时退出码 1）
+  ```
+
+- 确认页面跑的是哪版代码：浏览器控制台打印
+  `localStorage.getItem('dsh-whale-pet.dashboard-layout')`，看**记忆版本号**（当前 `v:5`）。
 - 计费口径改动请同步更新 `test/usage.test.mjs` / `test/usage-ledger.test.mjs`；看板布局改动请更新 `test/dashboard-layout.test.mjs`（它用 `vm` 从 `client.js` 里抠出工厂源码来跑，**测的就是线上那份代码**）。
 
 ---
