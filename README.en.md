@@ -95,6 +95,8 @@ Account balance + today's tokens + today's cost (peak/off-peak split, plus the h
 ### 💴 Session cost pill (under the composer)
 A cost pill next to the shipped token-usage pill shows the session's running cost; click it for the **cache hit / cache miss / output** breakdown, the peak vs off-peak totals, the priced-call count, and a live peak/off-peak badge. It shares one pricing kernel (`lib/usage.js`) and the `costUsage` projection with the task bubble and the balance button.
 
+> Since DSH **0.1.6-alpha.2** the shipped composer dock is a horizontal flex row (shipped stats pill + **context-occupancy meter** + this cost pill, `gap:12px`). The cost entry is declared as an ordinary inline flex item: the dock owns the gap and the vertical centering. On older DSH builds it degrades to its own centered row instead of overlapping the shipped row.
+
 ### 💴 Turn cost pill (each reply's action row)
 Next to the shipped "Usage X tok" pill, a "Cost ≈¥x.xx" pill shows **this turn's** cache-hit / cache-miss / output amounts plus its peak/off-peak split, read from the same `costUsage` projection (`byTurn`).
 
@@ -130,6 +132,9 @@ Restart `dsh web` and refresh the browser — the pet appears bottom-right.
 
 > **⚠️ Restarting `dsh web` is required after any change under `lib/`**: DSH loads a plugin's browser half into memory at boot rather than reading it from disk per request, so refreshing the page alone will not pick up new code (host routes and pricing behave the same way).
 
+> **🧩 Compatibility (0.3.2)**: verified against **DSH 0.1.6-alpha.2** — the host half's `/pet` and `/api/whale-pet/*` routes, the `costUsage` projection, the `sessionPersistence` back-scan and all four slot registrations (`shell.overlay`, `settings.section`, `conversation.composer.dock`, `conversation.chat.assistant-actions`) behave normally there; what this release adapts is that version's composer dock turning into a horizontal flex row with the context-occupancy meter moved into it.
+> The `peerDependencies` on DSH packages track the current alpha line (`^0.1.6-alpha.2`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line (e.g. 0.1.7-alpha.1) also needs this range refreshed, otherwise `pnpm install` prints unmet-peer warnings (warnings only — install and runtime are unaffected).
+
 ---
 
 ## ⚙️ Configuration
@@ -164,6 +169,11 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 ---
 
 ## 📝 Changelog
+
+### 0.3.2
+- **Fixed: the session cost pill was crooked under DSH 0.1.6-alpha.2.** That release wrapped the composer dock in a horizontal flex row (`InputBar.module.css`: `.dock{display:flex;align-items:center;justify-content:center;gap:12px}`) and moved the context-occupancy meter into it, while this plugin's cost entry still used the old overlay positioning (`width:100%` + `max-width` + `margin:-20px auto 0` + `padding` + `justify-content:flex-end`). Inside a horizontal flex row the negative margin lifts the whole entry by 20px and `width:100%` squeezes the shipped stats/context entries sharing the row — that is the misalignment. It is now an ordinary inline flex item (`display:inline-flex;flex:none;align-items:center`) so the shipped dock owns the gap and the centering.
+- **Compatibility aligned with DSH 0.1.6-alpha.2**: the DSH entries in `peerDependencies` moved from `^0.1.0-rc.6` to `^0.1.6-alpha.2` (under semver's prerelease rule the old range does **not** satisfy 0.1.6-alpha.2, so `pnpm install` reported unmet peers); the README now documents the compatibility contract. The host half was verified live (`/api/whale-pet/usage` answers normally) and the `costUsage` projection, the `sessionPersistence` back-scan, all four slot registrations and the shipped APIs show no breaking change; the turn pill's metrics still match the shipped `TurnUsagePanel` rule for rule.
+- Unit tests 75 → **76**: a composer-dock contract regression (the cost entry must not carry `width:100%` / `margin:-20px` / `--dsh-chat-content-width` / `--dsh-composer-side-clearance` again).
 
 ### 0.3.1
 - **Fixed: double-clicking the header no longer reset the panel** (a 0.3.0 regression). It looked like "double-click does nothing, but closing and reopening the panel recenters it": the reset called `place({})`, and that empty object was taken as a **size override** while the position still came from the in-memory layout — so the stored memory was cleared but the panel did not move. The reset now clears the in-memory layout first, then re-places against an empty layout and recenters immediately.
@@ -225,7 +235,7 @@ dsh-whale-girl-pet/
 ## 🛠️ Development
 
 ```sh
-node --test "test/*.test.mjs"     # 73 tests, zero dependencies, node:test only
+node --test "test/*.test.mjs"     # 76 tests, zero dependencies, node:test only
 ```
 
 - The browser bundle is a **hand-written** `window.__ModuleLoader__.load({ id, factory })` file with no build step: edit `lib/client.js` and restart `dsh web`.

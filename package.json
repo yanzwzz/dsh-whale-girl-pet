@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-girl-pet",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "🐋 DeepSeek 娘桌宠：住进 DeepSeek Harness Web 界面的蓝发鲸鱼女仆。工作链路（开工/轮播/收工庆祝）、任务完成统计气泡（用时/消耗/花费）、会话与单轮费用 pill（缓存命中/未命中/输出三桶 + 谷峰）、📊 分时段花费看板（北京小时·日趋势、三桶堆叠柱、缓存命中率、可拖动缩放）、睡眠系统、时间感知、余额/天气/喂食按钮与完整设置面板。A whale-girl desktop pet for the DeepSeek Harness Web UI.",
   "keywords": [
     "dsh",
@@ -81,16 +81,21 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-home-paths": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-home-paths": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-locale": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.6-alpha.2",
     "react": "^18.2.0",
     "zod": "^4.4.3"
   },
   "_comment_peers": [
+    "本包不 import 任何 @deepseek-ai/* 包（宿主侧只用 node 内建 + zod，浏览器侧只 require react），",
+    "这些 peer 是'声明式'的：说明本插件绑定的是哪一版 DSH 的服务与槽位契约。",
+    "范围必须点名当前 alpha 线：按 semver 的预发布规则，只有范围里存在与目标版本同 patch 的",
+    "预发布比较器时，预发布版本才算满足。所以 '^0.1.0-rc.6' 不满足 0.1.6-alpha.2（pnpm 会提示",
+    "未满足 peer），每换一条 DSH alpha 线（例如 0.1.7-alpha.1）也要同步更新这里。",
     "分时段看板的历史补扫用 ctx.get('sessionPersistence') 读已落盘会话。",
     "该服务由 @deepseek-ai/dsh-session-persistence-jsonl 提供、已随 dsh-base 组合进 web profile，",
     "插件用 ctx.get 可选取得（拿不到就退化为仅实时统计），所以不在此声名为硬依赖。"

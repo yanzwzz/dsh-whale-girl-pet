@@ -173,3 +173,28 @@ test('createPortal 的容器必须经过校验（防 minified React #200 再次�
   assert.ok(source.includes('DashboardBoundary'), '看板必须有错误围栏');
   assert.ok(source.includes('getDerivedStateFromError'), '错误围栏必须实现 getDerivedStateFromError');
 });
+
+test('会话费用条目适配 DSH 0.1.6-alpha.2 的 composer dock（横向 flex 行）', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  // 官方（ui-conversation InputBar.module.css）从 0.1.6-alpha.2 起把 dock 包成
+  // 横向 flex 行：.dock{display:flex;align-items:center;justify-content:center;
+  // gap:12px;padding-top:4px}，官方 stats pill 与上下文占用计都在这一行里。
+  // 因此本条目必须是一个「不可挤压的行内 flex 项」，由 dock 负责间距与居中。
+  const rule = /'\.dsh-cost-root\{([^}]*)\}'/.exec(source);
+  assert.ok(rule !== null, '必须存在 .dsh-cost-root 规则');
+  const body = rule[1];
+  assert.ok(body.includes('display:inline-flex'), '.dsh-cost-root 必须是行内 flex 容器');
+  assert.ok(body.includes('flex:none'), '.dsh-cost-root 必须不可挤压（否则会挤扁同排的官方条目）');
+  assert.ok(body.includes('align-items:center'), '.dsh-cost-root 必须按行居中');
+  assert.ok(body.includes('min-width:0'), '.dsh-cost-root 必须允许内容收缩');
+  // 旧布局的覆盖式定位：在横向 flex 行里会整块上移 20px，就是"歪了"的回归点
+  for (const forbidden of [
+    'width:100%',
+    'margin:-20px',
+    'justify-content:flex-end',
+    '--dsh-chat-content-width',
+    '--dsh-composer-side-clearance',
+  ]) {
+    assert.equal(body.includes(forbidden), false, '.dsh-cost-root 不得再带旧布局的 ' + forbidden);
+  }
+});

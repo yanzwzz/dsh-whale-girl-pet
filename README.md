@@ -99,6 +99,8 @@
 ### 💴 会话费用 pill（输入框下方）
 与官方 token 用量 pill 同排显示本会话累计费用，点击展开明细弹层：**缓存命中 / 缓存未命中 / 输出**三桶金额、高峰与空闲各自累计、计价调用数，并带实时「谷 / 峰」徽标。金额与任务完成气泡、余额按钮共用同一套价目与计费口径（`lib/usage.js` 为唯一内核，`costUsage` 投影供浏览器读取）。
 
+> DSH **0.1.6-alpha.2** 起，官方把输入框下方的统计区改成了横向 flex 行（官方 stats pill + **上下文占用计** + 本费用 pill 同排，`gap:12px`）。本插件的费用条目已按新契约声明为一个普通行内 flex 项，间距与垂直居中交给官方 dock；旧版 DSH 下它会退化成自己居中一行（不会与官方行重叠）。
+
 ### 💴 本轮费用 pill（每条回复的动作行）
 就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `costUsage` 投影的 `byTurn`，与会话累计同源。
 
@@ -137,6 +139,9 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 > **⚠️ 改动客户端 bundle 后必须重启 `dsh web`**：DSH 在启动时就把插件的浏览器半侧载入内存，不是每次从磁盘读。只刷新页面看不到新代码。
 > 宿主半侧（路由、计费、`lib/*.js`）同理，任何 `lib/` 下的改动都需要重启进程。
 
+> **🧩 兼容性（0.3.2）**：本版本针对 **DSH 0.1.6-alpha.2** 验证——宿主半侧的 `/pet` 与 `/api/whale-pet/*` 路由、`costUsage` 投影、`sessionPersistence` 补扫、槽位注册（`shell.overlay` / `settings.section` / `conversation.composer.dock` / `conversation.chat.assistant-actions`）在该版本上均正常；本次适配的是它把 composer dock 改成横向 flex 行、并把上下文占用计放进这一行的布局变更。
+> `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.1.6-alpha.2`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线（如 0.1.7-alpha.1）这条范围也要跟着更新，否则 `pnpm install` 会提示未满足 peer（只是警告，不影响安装与运行）。
+
 ---
 
 ## ⚙️ 配置
@@ -171,6 +176,11 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.2
+- **修复：输入框下方的费用 pill 在 DSH 0.1.6-alpha.2 下「歪了」**。官方把 composer dock 包成了横向 flex 行（`InputBar.module.css` 的 `.dock{display:flex;align-items:center;justify-content:center;gap:12px}`），并把「上下文占用」计也放进这一行；而本插件的费用条目还在用旧布局的覆盖式定位（`width:100%` + `max-width` + `margin:-20px auto 0` + `padding` + `justify-content:flex-end`）。进了横向 flex 行之后，负 margin 会把自己整块上移 20px，`width:100%` 还会挤扁同排的官方 stats / 上下文条目 —— 这就是错位。现在它就是一个普通行内 flex 项（`display:inline-flex;flex:none;align-items:center`），间距与垂直居中交给官方 dock，和官方条目自然同排。
+- **兼容性对齐 DSH 0.1.6-alpha.2**：`peerDependencies` 里的 DSH 包从 `^0.1.0-rc.6` 更新为 `^0.1.6-alpha.2`（按 semver 的预发布规则，旧范围**不满足** 0.1.6-alpha.2，`pnpm install` 会提示未满足 peer）；README 增补兼容性说明。宿主半侧经实测确认（`/api/whale-pet/usage` 正常返回），`costUsage` 投影、`sessionPersistence` 补扫、四个槽位注册与官方 API 均无破坏性变更；本轮费用 pill 的尺寸口径与官方 `TurnUsagePanel` 仍逐项一致。
+- 单测 75 → **76 项**：新增一条 composer dock 契约回归（费用条目不得再带 `width:100%` / `margin:-20px` / `--dsh-chat-content-width` / `--dsh-composer-side-clearance` 等旧布局写法）。
 
 ### 0.3.1
 - **修复：双击头部复位失效**（0.3.0 的回归）。表现是"双击后位置不动，但关掉面板再打开才回默认位置"——根因是复位走了 `place({})`，那个空对象被当成**尺寸覆盖参数**，而位置仍取自内存里的旧布局，于是只"清了记忆、没改位置"。现在复位会**先清空内存布局、再按空布局落定**，当场回到默认尺寸 + 视口居中。
@@ -234,7 +244,7 @@ dsh-whale-girl-pet/
 ## 🛠️ 开发
 
 ```sh
-node --test "test/*.test.mjs"     # 跑单测（75 项，零依赖，只用 node:test）
+node --test "test/*.test.mjs"     # 跑单测（76 项，零依赖，只用 node:test）
 ```
 
 - 客户端 bundle 是**手写**的 `window.__ModuleLoader__.load({ id, factory })` 形态，零构建步骤。
