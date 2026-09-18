@@ -181,6 +181,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 - **修复：输入框下方的费用 pill 在 DSH 0.1.6-alpha.2 下「歪了」**。官方把 composer dock 包成了横向 flex 行（`InputBar.module.css` 的 `.dock{display:flex;align-items:center;justify-content:center;gap:12px}`），并把「上下文占用」计也放进这一行；而本插件的费用条目还在用旧布局的覆盖式定位（`width:100%` + `max-width` + `margin:-20px auto 0` + `padding` + `justify-content:flex-end`）。进了横向 flex 行之后，负 margin 会把自己整块上移 20px，`width:100%` 还会挤扁同排的官方 stats / 上下文条目 —— 这就是错位。现在它就是一个普通行内 flex 项（`display:inline-flex;flex:none;align-items:center`），间距与垂直居中交给官方 dock，和官方条目自然同排。
 - **兼容性对齐 DSH 0.1.6-alpha.2**：`peerDependencies` 里的 DSH 包从 `^0.1.0-rc.6` 更新为 `^0.1.6-alpha.2`（按 semver 的预发布规则，旧范围**不满足** 0.1.6-alpha.2，`pnpm install` 会提示未满足 peer）；README 增补兼容性说明。宿主半侧经实测确认（`/api/whale-pet/usage` 正常返回），`costUsage` 投影、`sessionPersistence` 补扫、四个槽位注册与官方 API 均无破坏性变更；本轮费用 pill 的尺寸口径与官方 `TurnUsagePanel` 仍逐项一致。
 - 单测 75 → **76 项**：新增一条 composer dock 契约回归（费用条目不得再带 `width:100%` / `margin:-20px` / `--dsh-chat-content-width` / `--dsh-composer-side-clearance` 等旧布局写法）。
+- **修 `scripts/sync-install.ps1`：本机同时存在两份已安装副本**——`~/.dsh/profiles/node_modules/dsh-whale-girl-pet`（根级）与 `~/.dsh/profiles/web/node_modules/dsh-whale-girl-pet`（**web profile 真正加载的那份**）。只同步一份就会出现"重启了但现象没变"（本次就先把修复同步到了根级那份，白重启一次）。脚本现在默认同步**全部**已存在副本、收尾逐字节校验，并提示哪一份是 profile 实际加载的。
 
 ### 0.3.1
 - **修复：双击头部复位失效**（0.3.0 的回归）。表现是"双击后位置不动，但关掉面板再打开才回默认位置"——根因是复位走了 `place({})`，那个空对象被当成**尺寸覆盖参数**，而位置仍取自内存里的旧布局，于是只"清了记忆、没改位置"。现在复位会**先清空内存布局、再按空布局落定**，当场回到默认尺寸 + 视口居中。
