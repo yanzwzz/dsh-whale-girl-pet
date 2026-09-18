@@ -24,7 +24,7 @@
  * ============================================================================
  * @module dsh-whale-girl-pet/client
  */
-import type { Context } from '@deepseek-ai/dsh-client-runtime';
+import type { Context } from '@deepseek-ai/cordis';
 
 /** Cordis 插件名（loader 诊断用），与 lib/client.js 的 name 一致。 */
 export declare const name = 'pet';
