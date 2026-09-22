@@ -96,13 +96,17 @@
 ### 💰 余额 & 今日用量（💰 按钮）
 余额 + 今日消耗 tokens + 今日花费（峰谷分开计费，并按命中/未命中/输出三桶拆分），调用官方余额接口。顺手播一段「翻钱包」动画，结果汇入头顶气泡。
 
+> **今日花费 = 内部统计，含子代理会话与重启前的历史**：数字取自分时段账本（实时折叠**所有**会话 + 启动/按需补扫已落盘会话），而不是"当前在线会话"。所以主会话派发出去的子代理（subagent）开销、以及进程重启前今天已经花掉的部分，都算在内。
+
 ### 💴 会话费用 pill（输入框下方）
 与官方 token 用量 pill 同排显示本会话累计费用，点击展开明细弹层：**缓存命中 / 缓存未命中 / 输出**三桶金额、高峰与空闲各自累计、计价调用数，并带实时「谷 / 峰」徽标。金额与任务完成气泡、余额按钮共用同一套价目与计费口径（`lib/usage.js` 为唯一内核，`costUsage` 投影供浏览器读取）。
+
+> **金额含子会话**：DSH 的 `costUsage` 投影只折叠**本条会话自己的日志**，而子代理是独立会话，所以光靠投影会漏掉它们。宿主半侧按会话树（`sessionPersistence` 的 `parentSession` 血统）汇总后代会话的开销，经 `GET /api/whale-pet/subtree-cost` 提供给前端叠加；明细弹层里单列一行「子会话」。
 
 > DSH **0.1.6-alpha.2** 起，官方把输入框下方的统计区改成了横向 flex 行（官方 stats pill + **上下文占用计** + 本费用 pill 同排，`gap:12px`）。本插件的费用条目已按新契约声明为一个普通行内 flex 项，间距与垂直居中交给官方 dock；旧版 DSH 下它会退化成自己居中一行（不会与官方行重叠）。
 
 ### 💴 本轮费用 pill（每条回复的动作行）
-就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `costUsage` 投影的 `byTurn`，与会话累计同源。
+就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `costUsage` 投影的 `byTurn`，与会话累计同源；**本轮派发出去的子代理开销按"子会话创建时刻落在哪一轮"归到该轮**（明细里同样单列「子会话」）。
 
 ### ☁️ 明日天气（☁️ 按钮）
 主打明日预报（今日天气抬头就能看见 😄），支持中文城市名 / 自动定位，WMO 天气码本地中文映射。
@@ -139,14 +143,32 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 > **⚠️ 改动客户端 bundle 后必须重启 `dsh web`**：DSH 在启动时就把插件的浏览器半侧载入内存，不是每次从磁盘读。只刷新页面看不到新代码。
 > 宿主半侧（路由、计费、`lib/*.js`）同理，任何 `lib/` 下的改动都需要重启进程。
 
-> **🧩 兼容性（0.3.2）**：本版本针对 **DSH 0.1.6-alpha.2** 验证——宿主半侧的 `/pet` 与 `/api/whale-pet/*` 路由、`costUsage` 投影、`sessionPersistence` 补扫、槽位注册（`shell.overlay` / `settings.section` / `conversation.composer.dock` / `conversation.chat.assistant-actions`）在该版本上均正常；本次适配的是它把 composer dock 改成横向 flex 行、并把上下文占用计放进这一行的布局变更。
-> `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.1.6-alpha.2`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线（如 0.1.7-alpha.1）这条范围也要跟着更新，否则 `pnpm install` 会提示未满足 peer（只是警告，不影响安装与运行）。
+> **🧩 兼容性（0.3.3）**：本版本针对 **DSH 0.1.7-alpha.1** 验证（隔离实例实测：`apply()` 正常激活、`/pet/*` 与全部 `/api/whale-pet/*` 路由 200、真实浏览器里桌宠渲染 + 两枚费用 pill 正常 + 控制台零报错）。本次适配的是它同时改掉的三处服务契约。
+>
+> **⚠️ 0.1.7 的三处破坏性变更（0.3.2 及更早在 0.1.7 上会整体失效）**：
+> 1. **`dsh-settings`**：`SettingsProvider` → `SettingsForms`，**删掉了 `ctx.settings.register()` / `get()`**；
+> 2. **`dsh-jobs`**：**删掉了 `ctx.jobs.onJobDone()`**，改成 `ctx.jobs.events.subscribe(filter, listener)`，结算经 `settled` 事件（带 `job` 投影与 `cause`）；
+> 3. **`dsh-shell`**：**`run(spec)` → `execute(spec)`**，且 `execute()` 返回的是进程句柄，完整前台结果要再 `await handle.result()`。
+>
+> 老代码在 `apply()` 里抛 `TypeError` → DSH 判定该 entry **"did not activate"** → 表现就是**桌宠整个消失**（连浏览器半侧都不挂）。0.3.3 逐一适配（settings 走 profile 表单模型 + `.volatile()` + `ctx.fiber.config` 解包；jobs 走事件流并保留 old-API 回退；shell 兼容 `execute()/run()` 两条路径），并且**把每段可选功能的装配各自兜住**——以后再有单个 API 漂移，只会丢掉那一个功能（日志一条 warn），不会让桌宠从页面上消失。
+> `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.1.7-alpha.1`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线这条范围也要跟着更新，否则 `pnpm install` 会提示未满足 peer（只是警告，不影响安装与运行）。
+> 升级后如要跑一遍兼容性自检（**只有源码工作区带 `scripts/`，npm 包里不含**）：`cd D:\deepseek-harness && node --import tsx/esm "<源码工作区>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"`（30 项检查：settings API 形状、`apply()` 激活、inject 全覆盖、零功能跳过、7 条路由、子会话计费端到端、volatile 解包、jobs 事件流、shell execute/result）。
 
 ---
 
 ## ⚙️ 配置
 
-打开 DSH 设置 →「桌宠配置」面板即可调整全部选项（即时生效并写入 `settings.yaml`）：
+打开 DSH 设置 →「桌宠配置」面板即可调整全部选项（即时生效并在下次写回时落进 profile 补丁）：
+
+> **DSH ≥0.1.7 的配置存放位置变了**：0.1.6 及更早写 `$DSH_HOME/settings.yaml` 的 `whale-pet:` 段；0.1.7 起改为 **profile 补丁**（`$DSH_HOME/profiles/<profile>/cordis.patch.yml`）里该插件条目的 `config`。升级后旧 `settings.yaml` 会被 DSH 一次性改名成 `settings.yaml.imported`，第三方插件的段不会被自动导入，需要手工搬：
+>
+> ```yaml
+> # ~/.dsh/profiles/web/cordis.patch.yml
+> - id: pet
+>   config:
+>     city: 济南
+>     roam: false
+> ```
 
 | 配置 | 说明 | 默认 |
 |------|------|------|
@@ -176,6 +198,30 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.3
+- **适配 DSH 0.1.7-alpha.1（三处破坏性变更，0.3.2 在 0.1.7 上整体失效）**：
+  - **`dsh-settings`**：`SettingsProvider` → `SettingsForms`，`ctx.settings.register()` / `get()` 被删除。老代码在 `apply()` 里同步抛 `TypeError`；
+  - **`dsh-jobs`**：`ctx.jobs.onJobDone()` 被删除，改成 `ctx.jobs.events.subscribe(filter, listener)` + `settled` 事件（`job` 投影 / `cause`）；
+  - **`dsh-shell`**：`run(spec)` → `execute(spec)`，且 `execute()` 返回进程句柄，前台结果要再 `await handle.result()`。
+
+  任一处在 `apply()` 里抛错，DSH 就判定该 entry **"did not activate"**，表现是**桌宠整个消失**（连浏览器半侧都不挂）——0.3.3 的第一版适配只修了 settings，漏掉 jobs/shell 时就是这个症状。现在：
+  - `Config` 逐字段标 `.volatile()`（0.1.7 只把 volatile 字段放进设置表单，也只有它们能被 `mutate()` 写回）；
+  - 读值改为从 `ctx.fiber.config` **递归解包** volatile 引用（注意：volatile 是逐字段包装、只有 `.get()`，写入用 `Symbol.for('cosmokit.volatile.write')`，没有 `.set()`）；
+  - 写回按 **profile 里这条插件行的 id** 寻址（`entryIdOf()` 从 loader entry 取，退回 `pet`），不再是写死的 `whale-pet`；
+  - 后台任务：优先 `jobs.events.subscribe({ owners: 'all' })`，只在 `settled` 且 `cause !== 'teardown'` 时提醒；老版本退回 `onJobDone`；
+  - shell：新增 `runShell()`，兼容 `execute()+result()` 与旧版 `run()`；
+  - **每段可选功能的装配各自兜住**（`safe(ctx, label, fn)` + `apply` 外层兜底）：以后单个 API 漂移只丢那一个功能并记一条 warn，不再让桌宠消失；
+  - `peerDependencies` 升到 `^0.1.7-alpha.1`。
+- **修复：内部统计的金额不含子会话**。DSH 的 `costUsage` 投影只折叠**本条会话自己的日志**，子代理是独立会话，所以会话费用 pill / 本轮费用 pill 天然漏掉它们。现在：
+  - 账本（`lib/usage-ledger.js`）额外按会话 id 记一份累计（`sessionCost(id)`，与时间桶同步加/减，替换语义一致）；
+  - 新增 `lib/subtree.js`（纯逻辑）按 `parentSession` 血统建会话树、汇总全部后代会话的开销；在线会话取不到的子代理由 `sessionPersistence` 的落盘 header 补全；
+  - 新增只读接口 `GET /api/whale-pet/subtree-cost?session=<id>`；会话 pill 把后代合计叠加进总额，本轮 pill 按"子会话创建时刻落在哪一轮"归到该轮，明细里单列「子会话」。
+- **修复：同时查询余额和今日用量的按钮**（💰）。除了上面那条让路由重新注册，今日花费的口径也从"只扫当前在线会话"改成**读分时段账本**：覆盖所有会话（含子代理）并带历史补扫，重启后今天早段的花费不再丢；账本不可用时自动退回旧口径。`dashboardHistory` 从关改成开时也会按需补跑一次历史扫描。
+- **修复：数据看板 / 费用弹层背景变成半透明（看穿了）**。DSH 0.1.7 把 `--dsw-specific-menu` 从 `rgba(248,249,250,.94)` 改成了**半透明**（浅色 `.58` / 深色 `rgba(48,49,54,.5)`），并且样式规范要求"用这个填充的高层级表面必须在同一条规则里应用 `backdrop-filter: var(--dsw-menu-backdrop-filter)`"（官方 `ui-chat` 的 `stat-dialog.module.css` 就是成对写的）。宠物这两块面板只取了颜色、没配滤镜，于是就"看穿"了。现在改用官方 `Modal` 内容同款的**不透明**层表面 `--dsw-alias-bg-layer-2`（配同一个 `--dsw-elevation-prominent`），并回退到同样不透明的 `--dsw-alias-bg-module-platform` 以防 token 再漂移。实测：浅色面板 `rgb(255,255,255)`、深色 `rgb(44,44,46)`，内层统计卡 `rgb(245,246,247)` / `rgb(53,54,56)` 仍有层次，`backdrop-filter: none`。
+- 单测 76 → **88 项**：新增 `test/subtree.test.mjs`（会话树 / 后代枚举 / 环形血统防御 / 按轮归集 / 账本按会话累计 / "今日用量含子会话"回归）。
+- 新增 `scripts/verify-dsh-0.1.7.mjs`：对着**真实的** `dsh-settings` 源码跑 **30 项**兼容性自检（API 形状、`apply()` 激活、**inject 全覆盖断言**、**零功能跳过断言**、7 条路由、子会话计费端到端、volatile 解包、jobs 事件流、shell `execute()/result()`），下次 DSH 升级可直接复用。
+- 新增 `.research/pet-diag-probe.mjs`（工作区里的诊断探针）：把 profile 起在隔离端口 3099，打印启动输出里的 `did not activate` / `TypeError`、用 token 换 cookie 逐条打桌宠路由 —— 就是它定位出 `jobs.onJobDone is not a function` 的。
 
 ### 0.3.2
 - **修复：输入框下方的费用 pill 在 DSH 0.1.6-alpha.2 下「歪了」**。官方把 composer dock 包成了横向 flex 行（`InputBar.module.css` 的 `.dock{display:flex;align-items:center;justify-content:center;gap:12px}`），并把「上下文占用」计也放进这一行；而本插件的费用条目还在用旧布局的覆盖式定位（`width:100%` + `max-width` + `margin:-20px auto 0` + `padding` + `justify-content:flex-end`）。进了横向 flex 行之后，负 margin 会把自己整块上移 20px，`width:100%` 还会挤扁同排的官方 stats / 上下文条目 —— 这就是错位。现在它就是一个普通行内 flex 项（`display:inline-flex;flex:none;align-items:center`），间距与垂直居中交给官方 dock，和官方条目自然同排。

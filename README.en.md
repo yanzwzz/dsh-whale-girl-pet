@@ -92,13 +92,17 @@ The fourth button beside the pet opens a **hand-written inline SVG dashboard (ze
 ### 💰 Balance & today's usage (💰 button)
 Account balance + today's tokens + today's cost (peak/off-peak split, plus the hit/miss/output breakdown), via the official balance API.
 
+> **"Today's cost" is an internal estimate that includes subagent sessions and pre-restart history**: it comes from the time-bucketed ledger (live folding across **all** sessions plus an on-demand back-scan of persisted sessions), not from "whatever sessions happen to be live". So subagent spend and anything already spent earlier today before a restart are both counted.
+
 ### 💴 Session cost pill (under the composer)
 A cost pill next to the shipped token-usage pill shows the session's running cost; click it for the **cache hit / cache miss / output** breakdown, the peak vs off-peak totals, the priced-call count, and a live peak/off-peak badge. It shares one pricing kernel (`lib/usage.js`) and the `costUsage` projection with the task bubble and the balance button.
+
+> **The amount includes sub-sessions.** DSH's `costUsage` projection folds **this session's own log only**, and a subagent is a separate session, so the projection alone would miss it. The host half walks the session tree (`parentSession` lineage from `sessionPersistence`), sums every descendant, and serves it over `GET /api/whale-pet/subtree-cost`; the pill adds it to the total and the detail dialog lists a "Sub-sessions" row.
 
 > Since DSH **0.1.6-alpha.2** the shipped composer dock is a horizontal flex row (shipped stats pill + **context-occupancy meter** + this cost pill, `gap:12px`). The cost entry is declared as an ordinary inline flex item: the dock owns the gap and the vertical centering. On older DSH builds it degrades to its own centered row instead of overlapping the shipped row.
 
 ### 💴 Turn cost pill (each reply's action row)
-Next to the shipped "Usage X tok" pill, a "Cost ≈¥x.xx" pill shows **this turn's** cache-hit / cache-miss / output amounts plus its peak/off-peak split, read from the same `costUsage` projection (`byTurn`).
+Next to the shipped "Usage X tok" pill, a "Cost ≈¥x.xx" pill shows **this turn's** cache-hit / cache-miss / output amounts plus its peak/off-peak split, read from the same `costUsage` projection (`byTurn`). Subagents dispatched during that turn are attributed to it by their session's creation time (and listed as a "Sub-sessions" row too).
 
 ### ☁️ Tomorrow's weather (☁️ button)
 Tomorrow-first forecast; supports Chinese city names / auto-locate; WMO codes mapped to Chinese locally.
@@ -132,14 +136,32 @@ Restart `dsh web` and refresh the browser — the pet appears bottom-right.
 
 > **⚠️ Restarting `dsh web` is required after any change under `lib/`**: DSH loads a plugin's browser half into memory at boot rather than reading it from disk per request, so refreshing the page alone will not pick up new code (host routes and pricing behave the same way).
 
-> **🧩 Compatibility (0.3.2)**: verified against **DSH 0.1.6-alpha.2** — the host half's `/pet` and `/api/whale-pet/*` routes, the `costUsage` projection, the `sessionPersistence` back-scan and all four slot registrations (`shell.overlay`, `settings.section`, `conversation.composer.dock`, `conversation.chat.assistant-actions`) behave normally there; what this release adapts is that version's composer dock turning into a horizontal flex row with the context-occupancy meter moved into it.
-> The `peerDependencies` on DSH packages track the current alpha line (`^0.1.6-alpha.2`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line (e.g. 0.1.7-alpha.1) also needs this range refreshed, otherwise `pnpm install` prints unmet-peer warnings (warnings only — install and runtime are unaffected).
+> **🧩 Compatibility (0.3.3)**: verified against **DSH 0.1.7-alpha.1** on an isolated instance (`apply()` activates, `/pet/*` and every `/api/whale-pet/*` route returns 200, and in a real browser the pet renders with both cost pills and zero console errors). What this release adapts is that version changing three service contracts at once.
+>
+> **⚠️ Three 0.1.7 breaking changes (0.3.2 and older stop working entirely on 0.1.7)**:
+> 1. **`dsh-settings`**: `SettingsProvider` became `SettingsForms`, and `ctx.settings.register()` / `ctx.settings.get()` were **removed**;
+> 2. **`dsh-jobs`**: **`ctx.jobs.onJobDone()` was removed**, replaced by `ctx.jobs.events.subscribe(filter, listener)` with a `settled` event (carrying the `job` projection and `cause`);
+> 3. **`dsh-shell`**: **`run(spec)` became `execute(spec)`**, and `execute()` returns a process handle — the full foreground result needs `await handle.result()`.
+>
+> Any of them throwing inside `apply()` makes DSH mark the entry **"did not activate"** — the symptom is **the pet disappearing entirely** (the browser half does not mount either). 0.3.3 adapts to all three (settings on the profile-form model with `.volatile()` fields and unwrapped `ctx.fiber.config`; jobs on the event stream with an old-API fallback; shell accepting both `execute()` and `run()`), and **isolates every optional feature's assembly**: a single future API drift now only drops that one feature (with a warn log) instead of removing the pet from the page.
+> The `peerDependencies` on DSH packages track the current alpha line (`^0.1.7-alpha.1`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line also needs this range refreshed, otherwise `pnpm install` prints unmet-peer warnings (warnings only — install and runtime are unaffected).
+> To re-run the compatibility self-check after an upgrade (**the source workspace ships `scripts/`; the npm tarball does not**): `cd D:\deepseek-harness && node --import tsx/esm "<source workspace>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"` (30 checks: settings API shape, `apply()` activation, full `inject` coverage, zero skipped features, all seven routes, sub-session billing end to end, volatile unwrapping, the jobs event stream, and shell `execute()/result()`).
 
 ---
 
 ## ⚙️ Configuration
 
-See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
+See DSH Settings → "Pet Config" (all options live, written into the profile patch on the next save):
+
+> **Where settings live changed in DSH ≥ 0.1.7**: 0.1.6 and older wrote a `whale-pet:` section in `$DSH_HOME/settings.yaml`; 0.1.7 writes into the **profile patch** (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`) as the `config` of this plugin's entry. On upgrade DSH renames the old `settings.yaml` to `settings.yaml.imported`, and third-party sections are not imported automatically — move them by hand:
+>
+> ```yaml
+> # ~/.dsh/profiles/web/cordis.patch.yml
+> - id: pet
+>   config:
+>     city: 济南
+>     roam: false
+> ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -169,6 +191,30 @@ See DSH Settings → "Pet Config" (all options live, saved to `settings.yaml`):
 ---
 
 ## 📝 Changelog
+
+### 0.3.3
+- **Adapted to DSH 0.1.7-alpha.1 (three breaking changes that take 0.3.2 down entirely on 0.1.7)**:
+  - **`dsh-settings`**: `SettingsProvider` → `SettingsForms`; `ctx.settings.register()` / `get()` removed;
+  - **`dsh-jobs`**: `ctx.jobs.onJobDone()` removed, replaced by `ctx.jobs.events.subscribe(filter, listener)` with a `settled` event (`job` projection / `cause`);
+  - **`dsh-shell`**: `run(spec)` → `execute(spec)`, where `execute()` returns a process handle and the foreground result needs `await handle.result()`.
+
+  Any one of them throwing inside `apply()` makes DSH mark the entry **"did not activate"** — the symptom is **the pet disappearing entirely** (the browser half does not mount either); that is exactly what happened when the first pass of 0.3.3 fixed only settings and missed jobs/shell. Now:
+  - every `Config` field is marked `.volatile()` (0.1.7 only surfaces volatile fields in the settings form, and only those can be written by `mutate()`);
+  - values are read from `ctx.fiber.config` with volatile references **recursively unwrapped** (note: volatility is per field, the reference only has `.get()`, writing goes through `Symbol.for('cosmokit.volatile.write')` — there is no `.set()`);
+  - writes are addressed by the **profile entry id** of this plugin row (`entryIdOf()` reads it from the loader entry, falling back to `pet`) instead of a hard-coded `whale-pet`;
+  - job notices prefer `jobs.events.subscribe({ owners: 'all' })` and only report a `settled` event with `cause !== 'teardown'`; older DSH falls back to `onJobDone`;
+  - shell goes through a new `runShell()` that accepts both `execute()+result()` and the legacy `run()`;
+  - **every optional feature's assembly is isolated** (`safe(ctx, label, fn)` plus an outer guard on `apply`): a future single-API drift now only drops that one feature with a warn log instead of removing the pet;
+  - `peerDependencies` moved to `^0.1.7-alpha.1`.
+- **Fixed: internal totals excluded subagent sessions.** DSH's `costUsage` projection folds **this session's own log only**, and a subagent is a separate session, so both cost pills silently missed its spend. Now:
+  - the ledger (`lib/usage-ledger.js`) keeps a per-session total (`sessionCost(id)`, adjusted in lockstep with the time buckets and under the same replace semantics);
+  - `lib/subtree.js` (pure logic) builds the session tree from `parentSession` lineage and sums every descendant; persisted headers fill in subagents no longer live;
+  - a new read-only endpoint `GET /api/whale-pet/subtree-cost?session=<id>` feeds the pills: the session pill adds the descendant total, the turn pill attributes subagents to the turn their session was created in, and both dialogs list a "Sub-sessions" row.
+- **Fixed: the balance + today's-usage button (💰).** Besides the routes coming back, "today's cost" now reads the **time-bucketed ledger** instead of "sessions that happen to be live": it covers every session (subagents included) with a back-scan of persisted logs, so spend from earlier today is no longer lost after a restart; if the ledger is unusable it falls back to the old live-only path. Flipping `dashboardHistory` from off to on now also triggers the scan on demand.
+- **Fixed: the dashboard / cost panel background turned translucent (see-through).** DSH 0.1.7 changed `--dsw-specific-menu` from `rgba(248,249,250,.94)` into a **translucent** fill (light `.58`, dark `rgba(48,49,54,.5)`) and its styling guide requires that "an elevated surface using this fill applies `backdrop-filter: var(--dsw-menu-backdrop-filter)` in the same rule" (the shipped `stat-dialog.module.css` does exactly that). The pet's two panels took only the color and no filter, so they became see-through. They now use the **opaque** layer surface `--dsw-alias-bg-layer-2` that the shipped `Modal` content uses (with the same `--dsw-elevation-prominent`), falling back to the equally opaque `--dsw-alias-bg-module-platform` in case the token drifts again. Measured: panel `rgb(255,255,255)` light / `rgb(44,44,46)` dark, inner stat cards `rgb(245,246,247)` / `rgb(53,54,56)` so the layering survives, `backdrop-filter: none`.
+- Tests 76 → **88**: new `test/subtree.test.mjs` (session tree, descendant enumeration, cycle defence, per-turn attribution, per-session ledger totals, and a "today's usage includes sub-sessions" regression).
+- New `scripts/verify-dsh-0.1.7.mjs`: **30** compatibility checks run against the **real** `dsh-settings` source (API shape, `apply()` activation, a full-`inject` coverage assertion, a zero-skipped-features assertion, all seven routes, sub-session billing end to end, volatile unwrapping, the jobs event stream, shell `execute()/result()`) — reusable for the next DSH upgrade.
+- New `.research/pet-diag-probe.mjs` (a diagnostic probe in the workspace): boots the profile on isolated port 3099, prints `did not activate` / `TypeError` lines from the startup output, exchanges the token for a cookie and hits every pet route — this is what pinpointed `jobs.onJobDone is not a function`.
 
 ### 0.3.2
 - **Fixed: the session cost pill was crooked under DSH 0.1.6-alpha.2.** That release wrapped the composer dock in a horizontal flex row (`InputBar.module.css`: `.dock{display:flex;align-items:center;justify-content:center;gap:12px}`) and moved the context-occupancy meter into it, while this plugin's cost entry still used the old overlay positioning (`width:100%` + `max-width` + `margin:-20px auto 0` + `padding` + `justify-content:flex-end`). Inside a horizontal flex row the negative margin lifts the whole entry by 20px and `width:100%` squeezes the shipped stats/context entries sharing the row — that is the misalignment. It is now an ordinary inline flex item (`display:inline-flex;flex:none;align-items:center`) so the shipped dock owns the gap and the centering.

@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-girl-pet",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "🐋 DeepSeek 娘桌宠：住进 DeepSeek Harness Web 界面的蓝发鲸鱼女仆。工作链路（开工/轮播/收工庆祝）、任务完成统计气泡（用时/消耗/花费）、会话与单轮费用 pill（缓存命中/未命中/输出三桶 + 谷峰）、📊 分时段花费看板（北京小时·日趋势、三桶堆叠柱、缓存命中率、可拖动缩放）、睡眠系统、时间感知、余额/天气/喂食按钮与完整设置面板。A whale-girl desktop pet for the DeepSeek Harness Web UI.",
   "keywords": [
     "dsh",
@@ -80,11 +80,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-home-paths": "^0.1.6-alpha.2",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.6-alpha.2",
-    "@deepseek-ai/dsh-session-projection": "^0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-locale": "^0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-home-paths": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-session-projection": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-alpha.1",
     "react": "^18.2.0",
     "zod": "^4.4.3"
   },
