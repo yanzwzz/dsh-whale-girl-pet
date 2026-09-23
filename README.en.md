@@ -136,7 +136,7 @@ Restart `dsh web` and refresh the browser — the pet appears bottom-right.
 
 > **⚠️ Restarting `dsh web` is required after any change under `lib/`**: DSH loads a plugin's browser half into memory at boot rather than reading it from disk per request, so refreshing the page alone will not pick up new code (host routes and pricing behave the same way).
 
-> **🧩 Compatibility (0.3.3)**: verified against **DSH 0.1.7-alpha.1** on an isolated instance (`apply()` activates, `/pet/*` and every `/api/whale-pet/*` route returns 200, and in a real browser the pet renders with both cost pills and zero console errors). What this release adapts is that version changing three service contracts at once.
+> **🧩 Compatibility (0.3.4)**: verified against **DSH 0.1.7-alpha.1** on an isolated instance (`apply()` activates, `/pet/*` and every `/api/whale-pet/*` route returns 200, and in a real browser the pet renders with both cost pills, correct work/stop animation transitions and zero console errors). What this release adapts is that version changing three service contracts at once.
 >
 > **⚠️ Three 0.1.7 breaking changes (0.3.2 and older stop working entirely on 0.1.7)**:
 > 1. **`dsh-settings`**: `SettingsProvider` became `SettingsForms`, and `ctx.settings.register()` / `ctx.settings.get()` were **removed**;
@@ -145,7 +145,7 @@ Restart `dsh web` and refresh the browser — the pet appears bottom-right.
 >
 > Any of them throwing inside `apply()` makes DSH mark the entry **"did not activate"** — the symptom is **the pet disappearing entirely** (the browser half does not mount either). 0.3.3 adapts to all three (settings on the profile-form model with `.volatile()` fields and unwrapped `ctx.fiber.config`; jobs on the event stream with an old-API fallback; shell accepting both `execute()` and `run()`), and **isolates every optional feature's assembly**: a single future API drift now only drops that one feature (with a warn log) instead of removing the pet from the page.
 > The `peerDependencies` on DSH packages track the current alpha line (`^0.1.7-alpha.1`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line also needs this range refreshed, otherwise `pnpm install` prints unmet-peer warnings (warnings only — install and runtime are unaffected).
-> To re-run the compatibility self-check after an upgrade (**the source workspace ships `scripts/`; the npm tarball does not**): `cd D:\deepseek-harness && node --import tsx/esm "<source workspace>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"` (30 checks: settings API shape, `apply()` activation, full `inject` coverage, zero skipped features, all seven routes, sub-session billing end to end, volatile unwrapping, the jobs event stream, and shell `execute()/result()`).
+> To re-run the compatibility self-check after an upgrade (**the source workspace ships `scripts/`; the npm tarball does not**): `cd D:\deepseek-harness && node --import tsx/esm "<source workspace>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"` (32 checks: settings API shape, `apply()` activation, full `inject` coverage, zero skipped features, all seven routes, sub-session billing end to end, volatile unwrapping, the `/state` authority flag, the jobs event stream, and shell `execute()/result()`).
 
 ---
 
@@ -191,6 +191,14 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 ---
 
 ## 📝 Changelog
+
+### 0.3.4
+- **Fixed: while the Agent works the pet can get stuck in the random (idle) state — the same symptom as "clicking stop never reaches the pet".** Two layers:
+  1. **A client state-machine hole (the main cause)**: in `handleEnded`, the busy path only listed "start work / click / drag"; **every other one-shot animation fell through to the random chain (`pickNext()`)**. `busyRef.current` was already `true` at that point, so a later `mood:'working'` was swallowed by `if (!busyRef.current)` — the pet roams randomly forever while the Agent's status never changes again (`agent/status` is **edge-triggered**: it only reports changes). Interleaved agents (a subagent's running/idle pair) or an interrupted wake/notice animation are the easiest ways in. Now any non-work-chain animation that ends while busy returns straight to the work rotation.
+  2. **No level-triggered fact (structural)**: state came only from edge events, so one missed event meant permanent desync. `GET /api/whale-pet/state` now carries a **`running`** boolean recomputed from the Agent registry on every poll; the client reconciles every 800ms, so a dropped event is corrected automatically and a `busy` flag that drifted away from the animation chain is pulled back into the work rotation.
+- **Completed the wind-down order**: on an interrupt/stop the pet now plays **"work finished" first** (sit → stand) and only then enters the random idle chain. `applyMood('idle')` used to jump straight to idle, skipping that state entirely; it now plays only when actually leaving the busy state (a pet that was already idle does not replay it), and a completion bubble in the same batch no longer restarts the same animation (`playNotice` only shows the bubble when the animation is already playing).
+- Note: **DSH itself also needs time to converge after you press stop** before the Agent reports idle (measured ~16s, during which DSH's own composer still shows "stop generating"). The pet follows that fact faithfully; what this release fixes is the pet failing to catch up once the fact *has* changed.
+- The self-check script grew to **32 checks** (a new assertion that `/state` carries `running`).
 
 ### 0.3.3
 - **Adapted to DSH 0.1.7-alpha.1 (three breaking changes that take 0.3.2 down entirely on 0.1.7)**:

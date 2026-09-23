@@ -156,7 +156,7 @@ const ctx = {
     if (name === 'shell') return shellStub
     if (name === 'credentials') return credentialsStub
     if (name === 'sandboxPolicy') return { resolve: () => undefined }
-    if (name === 'agents') return { roots: () => [] }
+    if (name === 'agents') return { roots: () => [], list: () => [{ id: 'agent-1', status: 'running' }] }
     return undefined
   },
   settings: settingsStub,
@@ -287,6 +287,17 @@ check('settings 路由报告 writable', settingsGet.json?.writable === true)
 // 看板窗口应读到 volatile 里的 14 天
 const usageRoute = await hit('/api/whale-pet/usage', { url: '/api/whale-pet/usage' })
 check('看板窗口按 volatile 配置生效（14 天）', usageRoute.json?.windowDays === 14, String(usageRoute.json?.windowDays))
+
+// ---------------------------------------------------------------------------
+// 5b. /state 带权威 running：客户端靠它自愈，不再依赖边沿事件
+//     （手动停止后卡在"工作中"就是漏一条 agent/status idle 导致的）
+// ---------------------------------------------------------------------------
+console.log('\n[5b] /api/whale-pet/state 带权威工作状态')
+const stateRoute = await hit('/api/whale-pet/state', { url: '/api/whale-pet/state' })
+check('state 路由带 running 布尔（现算自 agents 注册表）', stateRoute.json?.running === true,
+  JSON.stringify(stateRoute.json?.running))
+check('state 路由仍带 items 与 settings', Array.isArray(stateRoute.json?.items)
+  && typeof stateRoute.json?.settings === 'object')
 
 // ---------------------------------------------------------------------------
 // 6. 后台任务通知：0.1.7 的 jobs.events.subscribe → settled 事件

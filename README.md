@@ -143,7 +143,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 > **⚠️ 改动客户端 bundle 后必须重启 `dsh web`**：DSH 在启动时就把插件的浏览器半侧载入内存，不是每次从磁盘读。只刷新页面看不到新代码。
 > 宿主半侧（路由、计费、`lib/*.js`）同理，任何 `lib/` 下的改动都需要重启进程。
 
-> **🧩 兼容性（0.3.3）**：本版本针对 **DSH 0.1.7-alpha.1** 验证（隔离实例实测：`apply()` 正常激活、`/pet/*` 与全部 `/api/whale-pet/*` 路由 200、真实浏览器里桌宠渲染 + 两枚费用 pill 正常 + 控制台零报错）。本次适配的是它同时改掉的三处服务契约。
+> **🧩 兼容性（0.3.4）**：本版本针对 **DSH 0.1.7-alpha.1** 验证（隔离实例实测：`apply()` 正常激活、`/pet/*` 与全部 `/api/whale-pet/*` 路由 200、真实浏览器里桌宠渲染 + 两枚费用 pill 正常 + 工作/停止动画联动正常 + 控制台零报错）。本次适配的是它同时改掉的三处服务契约。
 >
 > **⚠️ 0.1.7 的三处破坏性变更（0.3.2 及更早在 0.1.7 上会整体失效）**：
 > 1. **`dsh-settings`**：`SettingsProvider` → `SettingsForms`，**删掉了 `ctx.settings.register()` / `get()`**；
@@ -152,7 +152,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 >
 > 老代码在 `apply()` 里抛 `TypeError` → DSH 判定该 entry **"did not activate"** → 表现就是**桌宠整个消失**（连浏览器半侧都不挂）。0.3.3 逐一适配（settings 走 profile 表单模型 + `.volatile()` + `ctx.fiber.config` 解包；jobs 走事件流并保留 old-API 回退；shell 兼容 `execute()/run()` 两条路径），并且**把每段可选功能的装配各自兜住**——以后再有单个 API 漂移，只会丢掉那一个功能（日志一条 warn），不会让桌宠从页面上消失。
 > `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.1.7-alpha.1`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线这条范围也要跟着更新，否则 `pnpm install` 会提示未满足 peer（只是警告，不影响安装与运行）。
-> 升级后如要跑一遍兼容性自检（**只有源码工作区带 `scripts/`，npm 包里不含**）：`cd D:\deepseek-harness && node --import tsx/esm "<源码工作区>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"`（30 项检查：settings API 形状、`apply()` 激活、inject 全覆盖、零功能跳过、7 条路由、子会话计费端到端、volatile 解包、jobs 事件流、shell execute/result）。
+> 升级后如要跑一遍兼容性自检（**只有源码工作区带 `scripts/`，npm 包里不含**）：`cd D:\deepseek-harness && node --import tsx/esm "<源码工作区>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"`（32 项检查：settings API 形状、`apply()` 激活、inject 全覆盖、零功能跳过、7 条路由、子会话计费端到端、volatile 解包、`/state` 权威 running、jobs 事件流、shell execute/result）。
 
 ---
 
@@ -198,6 +198,14 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.4
+- **修复：Agent 工作时宠物可能永远停在随机（待机）状态 —— 也就是"手动点停止后收不到停止状态"那个现象**。根因有两层：
+  1. **客户端状态机漏洞（主因）**：`handleEnded` 里工作中只列举了「开始工作 / 点击回应 / 拖拽」几种动画，**其余一次性动画播完一律掉进随机链 `pickNext()`**；而 `busyRef.current` 此时已经是 `true`，后续 `mood:'working'` 会被 `if (!busyRef.current)` 挡成空操作 —— 宠物就永远随机下去，而 Agent 的状态早已不再变化（`agent/status` 是**边沿触发**，只发变化）。多 Agent 交错（子代理 running/idle 穿插）、或叫醒/通知动画被打断时最容易踩到。现在：工作中任何"非工作链"动画播完都直接回到工作轮播。
+  2. **缺少"电平"事实（结构性）**：状态转移全靠边沿事件，漏一条就永久失步。现在 `GET /api/whale-pet/state` 每次轮询都带上从 Agent 注册表现算的 **`running`** 布尔；客户端每 800ms 对一次账——事件丢了会被自动纠正，`busy` 与动画脱钩（卡在待机链）也会被拉回工作轮播。
+- **补齐收工三态的顺序**：打断/结束时**先播「工作结束」**（坐→站），播完再进入随机链。原先 `applyMood('idle')` 是直接跳到「待机」，把「工作结束」这一态整个跳掉了；现在只有真的从"工作中"退出时才播它（本来就空闲时不会多播一次），并且同一批次里的完成气泡不会让同一个动画重播（`playNotice` 遇到当前已在播的动画只出气泡、不重启视频）。
+- 说明：**点停止后 DSH 本身也要等收敛**才把 Agent 置为 idle（实测约 16 秒，其间 DSH 自己的输入框也仍然显示「停止生成」）。宠物是忠实跟随这个事实的，不是宠物自己卡住；上面的修复解决的是"事实已经变了但宠物没跟上"。
+- 自检脚本增至 **32 项**（新增 `/state` 带 `running` 的断言）。
 
 ### 0.3.3
 - **适配 DSH 0.1.7-alpha.1（三处破坏性变更，0.3.2 在 0.1.7 上整体失效）**：
