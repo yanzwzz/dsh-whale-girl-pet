@@ -99,14 +99,14 @@
 > **今日花费 = 内部统计，含子代理会话与重启前的历史**：数字取自分时段账本（实时折叠**所有**会话 + 启动/按需补扫已落盘会话），而不是"当前在线会话"。所以主会话派发出去的子代理（subagent）开销、以及进程重启前今天已经花掉的部分，都算在内。
 
 ### 💴 会话费用 pill（输入框下方）
-与官方 token 用量 pill 同排显示本会话累计费用，点击展开明细弹层：**缓存命中 / 缓存未命中 / 输出**三桶金额、高峰与空闲各自累计、计价调用数，并带实时「谷 / 峰」徽标。金额与任务完成气泡、余额按钮共用同一套价目与计费口径（`lib/usage.js` 为唯一内核，`costUsage` 投影供浏览器读取）。
+与官方 token 用量 pill 同排显示本会话累计费用，点击展开明细弹层：**缓存命中 / 缓存未命中 / 输出**三桶金额、高峰与空闲各自累计、计价调用数，并带实时「谷 / 峰」徽标。金额与任务完成气泡、余额按钮共用同一套价目与计费口径（`lib/usage.js` 为唯一内核，`whalePetCost` 投影供浏览器读取）。
 
-> **金额含子会话**：DSH 的 `costUsage` 投影只折叠**本条会话自己的日志**，而子代理是独立会话，所以光靠投影会漏掉它们。宿主半侧按会话树（`sessionPersistence` 的 `parentSession` 血统）汇总后代会话的开销，经 `GET /api/whale-pet/subtree-cost` 提供给前端叠加；明细弹层里单列一行「子会话」。
+> **金额含子会话**：`whalePetCost` 投影只折叠**本条会话自己的日志**，而子代理是独立会话，所以光靠投影会漏掉它们。宿主半侧按会话树（`sessionPersistence` 的 `parentSession` 血统）汇总后代会话的开销，经 `GET /api/whale-pet/subtree-cost` 提供给前端叠加；明细弹层里单列一行「子会话」。
 
 > DSH **0.1.6-alpha.2** 起，官方把输入框下方的统计区改成了横向 flex 行（官方 stats pill + **上下文占用计** + 本费用 pill 同排，`gap:12px`）。本插件的费用条目已按新契约声明为一个普通行内 flex 项，间距与垂直居中交给官方 dock；旧版 DSH 下它会退化成自己居中一行（不会与官方行重叠）。
 
 ### 💴 本轮费用 pill（每条回复的动作行）
-就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `costUsage` 投影的 `byTurn`，与会话累计同源；**本轮派发出去的子代理开销按"子会话创建时刻落在哪一轮"归到该轮**（明细里同样单列「子会话」）。
+就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `whalePetCost` 投影的 `byTurn`，与会话累计同源；**本轮派发出去的子代理开销按"子会话创建时刻落在哪一轮"归到该轮**（明细里同样单列「子会话」）。
 
 ### ☁️ 明日天气（☁️ 按钮）
 主打明日预报（今日天气抬头就能看见 😄），支持中文城市名 / 自动定位，**WWO 天气码本地中文映射**（wttr.in 返回的是 WWO 三位码：113=晴、116=局部多云、122=阴）。
@@ -216,6 +216,8 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
   - **交互改成原生监听 + 最新闭包转发**：React 的合成事件委托在 root 容器上、沿 light DOM 祖先链匹配 props，而 shadow 里冒出来的 pointer/click 虽然会穿出边界（composed），target 却被 retarget 成 host（`.dsh-pet-stage`）—— props 永远匹配不上。现在两个 video 手工创建、原生 `addEventListener`，事件转发到每帧刷新的 `handlersRef`（避免绑在首次渲染的过期闭包上；`setPointerCapture` 的 `currentTarget` 仍是 video 本身）。
   - 样式仍是**单一来源**：同一份 CSS 文本既注入 `document.head`，也注入 shadow，避免两处手抄漂移。播放逻辑（`switchTo` 的 `src`/`load()`/`classList`/`play()`/`pause()`/`onended`）操作的一直是元素引用，**未做任何改动**。
   - `test/client-bundle.test.mjs` 新增静态不变式：必须 `attachShadow` + `mode:'closed'`、不得再有 `h('video'`、必须有 `replaceChildren`/`WeakMap`、**不得出现 `:host-context`**、必须有 `--dsh-pet-flip` 桥接、事件必须走 `handlersRef`，并断言 shadow 的 effect 声明在 `switchTo` 的 effect **之前**（顺序错了首次挂载会空白）。
+- **修复：与 dsh-cost-meter 的会话投影键撞名**（[issue #1](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/1)）。DSH 的 `sessionProjections` 把键当**全局命名空间**：同一个键被两个不同 `stateVersion` 注册时直接抛错（`is already registered at stateVersion 9; refusing to share it with stateVersion 2`）。两个插件都用 `costUsage` —— 0.2.0 时代的表现是**整条 entry 装配失败、桌宠直接消失**；0.3.3 起每段功能都被 `safe()` 兜住，桌宠不再消失，但我们的费用 pill 会去读**别人的** `costUsage` 投影（形状不同 → 数字错或报错）。现在投影键改为带前缀的 **`whalePetCost`**（[`lib/cost-projection.js`](lib/cost-projection.js)），浏览器半侧两处 `useProjection()` 同步改名。
+- **新增宿主半侧集成测试** [`test/host-routes.test.mjs`](test/host-routes.test.mjs)（6 项）：用假 ctx **真跑 `apply()`**、拿它注册的路由、用桩 `fetch` 真打一遍 —— 覆盖路由清单、天气取值（城市来自设置）、失败文案、余额 401、**投影撞名时 `apply()` 不得整体失败（零功能跳过）**，以及**宿主与浏览器半侧的投影键必须一致**（写错就是费用 pill 静默失灵）。这层测试正好补上开发期踩到的一个缝：天气的模块级函数误读了 `applyInner` 闭包里的 `resolveConfig`，单测全绿而真机 502（`resolveConfig is not defined`）—— 现在 `scripts/verify-dsh-0.1.7.mjs` 也加了一条「失败信息里不得出现 JS 层错误」的断言。
 
 ### 0.3.5
 - **修复：法定节假日被误按高峰计价，费用最高虚高一倍**。官方定价页口径是「高峰 = UTC 周一至周五的 01:00-04:00 与 06:00-10:00（北京 9:00-12:00、14:00-18:00），**周末与中国法定节假日整天低峰**」，而原先的 `isPeakBeijing()` 只判了周末、没有节假日表 —— 于是春节/国庆这类落在工作日的长假会被按高峰算，1M 未命中输入 + 1M 输出在 9/10 档下会从实际的 **5 元虚报成 10 元**。
@@ -306,7 +308,7 @@ dsh-whale-girl-pet/
 │   ├── index.js            宿主半侧：/pet 动画路由、/api/whale-* 接口、settings 命名空间、投影注册
 │   ├── usage.js            用量与计费内核（价目表 + 事件折叠 + 三桶费用，零依赖）★唯一计费口径
 │   ├── usage-ledger.js     分时段账本（北京小时/日桶、去重、保留窗口）—— 看板数据源
-│   ├── cost-projection.js  costUsage 会话投影（费用 pill / 本轮费用 pill 读取）
+│   ├── cost-projection.js  whalePetCost 会话投影（费用 pill / 本轮费用 pill 读取）
 │   ├── client.js           浏览器半侧：桌宠本体、气泡、按钮组、看板弹窗与布局、设置面板
 │   └── types/              TypeScript 类型声明（纯类型，不影响运行时）
 ├── assets/thumb/           360×360 播放用动画（随包发布）

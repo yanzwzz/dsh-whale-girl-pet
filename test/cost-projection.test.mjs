@@ -1,5 +1,5 @@
 /**
- * dsh-whale-girl-pet costUsage 投影单测（宿主半侧，费用 pill 的数据源）。
+ * dsh-whale-girl-pet whalePetCost 投影单测（宿主半侧，费用 pill 的数据源）。
  * 运行：node --test（在插件根目录）
  */
 import test from 'node:test';

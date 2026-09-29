@@ -9,7 +9,7 @@
  *      这两个方法被删除，老代码 `ctx.settings.register(...)` 会在 apply 里抛
  *      TypeError 并让整个宿主半侧失效。
  *   2. 用那份真实 API 形状的 ctx 跑 pet.apply()，确认不再抛错，
- *      且该注册的东西都注册了（costUsage 投影 + 全部 HTTP 路由 + 事件监听）。
+ *      且该注册的东西都注册了（whalePetCost 投影 + 全部 HTTP 路由 + 事件监听）。
  *   3. 端到端打一遍 /api/whale-balance 与 /api/whale-pet/subtree-cost：
  *      往 session/event 总线喂"子会话"的用量，检查
  *        - 余额按钮里的「今日花费」走账本、把子会话算进去；
@@ -185,7 +185,7 @@ check('没有任何功能被"跳过"（warnSkip 零命中）', warnings.filter(w
   warnings.join(' | '))
 check('后台任务通知订阅了 jobs 事件流（0.1.7 的 jobs.events.subscribe）',
   registered.jobSubscriptions.length > 0, JSON.stringify(registered.jobSubscriptions))
-check('注册了 costUsage 投影', registered.projections.includes('costUsage'), JSON.stringify(registered.projections))
+check('注册了 whalePetCost 投影', registered.projections.includes('whalePetCost'), JSON.stringify(registered.projections))
 for (const path of ['/api/whale-balance', '/api/whale-pet/state', '/api/whale-pet/usage',
   '/api/whale-pet/settings', '/api/whale-pet/subtree-cost', '/api/whale-pet/weather', '/pet']) {
   check(`注册了路由 ${path}`, routes.some(route => route.path === path))
@@ -333,6 +333,11 @@ check('返回可 JSON 化的结果（成功给 tomorrowIcon，失败给 error）
   weather.text?.slice(0, 200))
 check('失败时不再出现 shell 语法错误特征（bash / PowerShell）',
   !/bash|PSEdition|Invoke-RestMethod|未找到命令|unexpected token/i.test(weatherError), weatherError)
+// 【为什么单列一条】0.3.6 开发期真的踩过：weather 的模块级函数去读了 applyInner 闭包里的
+// resolveConfig，单测全绿而真机返回 `resolveConfig is not defined`。任何 JS 层错误
+// （作用域/引用/类型）都必须在这里被抓住 —— 它是"接线错了"，不是"网络不通"。
+check('失败信息里不得出现 JS 层错误（作用域 / 引用 / 类型）',
+  !/is not defined|ReferenceError|TypeError|SyntaxError/.test(weatherError), weatherError)
 const balanceAgain = await hit('/api/whale-balance')
 check('余额路由同样没有调用 shell', shellCalls.resolve === 0 && shellCalls.execute === 0, JSON.stringify(shellCalls))
 check('余额路由仍返回完整结构（ok + 今日用量）',
