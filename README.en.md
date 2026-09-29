@@ -40,7 +40,7 @@ Cost ≈¥3.21
 · output ≈¥2.91
 ```
 - Estimated from official DeepSeek pricing, priced **per usage event by its own timestamp**, so a task spanning a price change or a peak/off-peak boundary still adds up
-- Peak/off-peak: weekdays 9:00-12:00 / 14:00-18:00 Beijing time are peak (2x the off-peak price); weekends are off-peak all day
+- Peak/off-peak: weekdays 9:00-12:00 / 14:00-18:00 Beijing time are peak (2x the off-peak price); **weekends and Chinese public holidays are off-peak all day** (`CN_STATUTORY_HOLIDAYS` in `lib/usage.js`, extended yearly from the State Council notice)
 - **Flash series repriced from 2026-09-10 12:00 Beijing**: off-peak 0.02 / 1 / 4 CNY per million tokens, peak 2x; pro unchanged
 - Cache writes are billed at the cache-miss price (matching `prompt_cache_miss_tokens`)
 - Includes subagent sessions
@@ -138,13 +138,15 @@ Restart `dsh web` and refresh the browser — the pet appears bottom-right.
 
 > **🧩 Compatibility (0.3.4)**: verified against **DSH 0.1.7-alpha.1** on an isolated instance (`apply()` activates, `/pet/*` and every `/api/whale-pet/*` route returns 200, and in a real browser the pet renders with both cost pills, correct work/stop animation transitions and zero console errors). What this release adapts is that version changing three service contracts at once.
 >
+> **✅ Additional verification: DSH 0.2.0-rc.1 needs no code change.** Between 0.1.7-alpha.1 and 0.2.0-rc.1 the services this plugin actually consumes (`dsh-settings`, `dsh-session-projection`, `dsh-jobs`, `dsh-host-webserver`, `dsh-home-paths`, `dsh-session-persistence`, `dsh-shell`, `dsh-sandbox`, `client-locale`, `client-ui-slots`) have **zero source changes** (only README.i18n and package.json churn); the `agent/status` and `session/event` names and the `/plugins/<entryId>/client.js` bundle contract are unchanged; config fields such as `mode`/`headless`/`executablePath` are unchanged. The full self-check (32 checks) passes against the 0.2.0-rc.1 checkout, so this round only realigns the `peerDependencies` DSH range to `^0.2.0-rc.1`.
+>
 > **⚠️ Three 0.1.7 breaking changes (0.3.2 and older stop working entirely on 0.1.7)**:
 > 1. **`dsh-settings`**: `SettingsProvider` became `SettingsForms`, and `ctx.settings.register()` / `ctx.settings.get()` were **removed**;
 > 2. **`dsh-jobs`**: **`ctx.jobs.onJobDone()` was removed**, replaced by `ctx.jobs.events.subscribe(filter, listener)` with a `settled` event (carrying the `job` projection and `cause`);
 > 3. **`dsh-shell`**: **`run(spec)` became `execute(spec)`**, and `execute()` returns a process handle — the full foreground result needs `await handle.result()`.
 >
 > Any of them throwing inside `apply()` makes DSH mark the entry **"did not activate"** — the symptom is **the pet disappearing entirely** (the browser half does not mount either). 0.3.3 adapts to all three (settings on the profile-form model with `.volatile()` fields and unwrapped `ctx.fiber.config`; jobs on the event stream with an old-API fallback; shell accepting both `execute()` and `run()`), and **isolates every optional feature's assembly**: a single future API drift now only drops that one feature (with a warn log) instead of removing the pet from the page.
-> The `peerDependencies` on DSH packages track the current alpha line (`^0.1.7-alpha.1`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line also needs this range refreshed, otherwise `pnpm install` prints unmet-peer warnings (warnings only — install and runtime are unaffected).
+> The `peerDependencies` on DSH packages track the current alpha line (`^0.2.0-rc.1`): npm/pnpm semver only counts a prerelease as satisfying a range when some comparator names a prerelease of the **same patch**, so each new DSH alpha line also needs this range refreshed. **From DSH 0.2.0 on, this range is more than a warning**: the runtime runs a compatibility preflight before startup and refuses to load the bundle when the range is unsatisfied (`skipping profile bundle`, the pet never appears). Either grant an exact-version exemption in the profile directory or move the range onto the current version line.
 > To re-run the compatibility self-check after an upgrade (**the source workspace ships `scripts/`; the npm tarball does not**): `cd D:\deepseek-harness && node --import tsx/esm "<source workspace>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"` (32 checks: settings API shape, `apply()` activation, full `inject` coverage, zero skipped features, all seven routes, sub-session billing end to end, volatile unwrapping, the `/state` authority flag, the jobs event stream, and shell `execute()/result()`).
 
 ---
@@ -191,6 +193,13 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 ---
 
 ## 📝 Changelog
+
+### 0.3.5 (unreleased)
+- **Fixed: Chinese public holidays were billed at peak, overstating cost by up to 2x.** The official rule is "peak = 01:00-04:00 and 06:00-10:00 UTC, Monday through Friday (09:00-12:00 and 14:00-18:00 Beijing), **excluding Chinese public holidays**; weekends and Chinese public holidays are off-peak in full", but `isPeakBeijing()` only had the weekend check — so long holidays such as Spring Festival or National Day that fall on weekdays were priced at peak. With the 2026-09-10 card, 1M cache-miss input + 1M output was reported as **10 CNY instead of the actual 5 CNY**.
+- Added `CN_STATUTORY_HOLIDAYS` to [`lib/usage.js`](lib/usage.js), recording all **33 holiday dates** from the State Council's 2026 notice (国办发明电〔2025〕7 号). The browser half mirrors the same table in `lib/client.js`'s `isPeakNow()` (it cannot import host modules, so the table is duplicated with cross-referencing comments).
+- **Make-up work weekend days stay off-peak.** The official rule judges weekdays by UTC Monday–Friday, so the 2026 make-up Saturdays/Sundays (01-04, 02-14, 02-28, 05-09, 09-20, 10-10) remain calendar weekends — the pricing page says "including weekends ... in full" — and are deliberately not listed.
+- Added [`test/holiday-peak.test.mjs`](test/holiday-peak.test.mjs) (10 tests): holidays off-peak all day, make-up weekend days off-peak, adjacent normal workdays unaffected, Beijing cross-midnight date split, non-finite timestamps, a **timestamp-by-timestamp cross-check between the host and client implementations** (all of 2026 plus early 2027, ~4700 instants including the 09:00/12:00/14:00/18:00 boundary minutes), and an end-to-end assertion that a holiday costs 5 CNY versus 10 CNY on a workday.
+- **Maintenance**: the table is extended yearly (the 2027 notice is expected around November 2026). A missing year can only misclassify a holiday as peak (too high), never understate. The dashboard band and cost-dialog copy now state that weekends and public holidays are off-peak all day.
 
 ### 0.3.4
 - **Fixed: while the Agent works the pet can get stuck in the random (idle) state — the same symptom as "clicking stop never reaches the pet".** Two layers:

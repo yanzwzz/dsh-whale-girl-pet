@@ -42,7 +42,7 @@
 · 输出 ≈¥2.91
 ```
 - 用量按 DeepSeek 官方价目估算，**按每条用量的事件时间选档**：跨换价、跨峰谷的一次任务也能算准
-- 峰谷：北京时间工作日 9:00-12:00、14:00-18:00 为高峰（空闲价的 2 倍），周末全天按空闲
+- 峰谷：北京时间工作日 9:00-12:00、14:00-18:00 为高峰（空闲价的 2 倍），**周末与中国法定节假日整天按空闲**（`lib/usage.js` 的 `CN_STATUTORY_HOLIDAYS`，按国务院通知逐年扩表）
 - **2026-09-10 12:00 起 flash 系列调价**：空闲 0.02 / 1 / 4（元每百万 tokens），高峰为其 2 倍；pro 维持现价
 - 缓存写入按未命中价计（对应官方 `prompt_cache_miss_tokens`）
 - 统计包含子代理会话
@@ -145,13 +145,15 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 
 > **🧩 兼容性（0.3.4）**：本版本针对 **DSH 0.1.7-alpha.1** 验证（隔离实例实测：`apply()` 正常激活、`/pet/*` 与全部 `/api/whale-pet/*` 路由 200、真实浏览器里桌宠渲染 + 两枚费用 pill 正常 + 工作/停止动画联动正常 + 控制台零报错）。本次适配的是它同时改掉的三处服务契约。
 >
+> **✅ 追加验证：DSH 0.2.0-rc.1 无需改代码**。0.1.7-alpha.1 → 0.2.0-rc.1 之间，本插件真正调用的服务（`dsh-settings`、`dsh-session-projection`、`dsh-jobs`、`dsh-host-webserver`、`dsh-home-paths`、`dsh-session-persistence`、`dsh-shell`、`dsh-sandbox`、`client-locale`、`client-ui-slots`）**源码零改动**（只有 README.i18n / package.json 变更）；`agent/status`、`session/event` 事件名与 `/plugins/<entryId>/client.js` 客户端 bundle 契约均保留；`mode`/`headless`/`executablePath` 等配置字段不变。全套自检（32 项）在 0.2.0-rc.1 检出上通过，故本次只把 `peerDependencies` 的 DSH 范围对齐到 `^0.2.0-rc.1`。
+>
 > **⚠️ 0.1.7 的三处破坏性变更（0.3.2 及更早在 0.1.7 上会整体失效）**：
 > 1. **`dsh-settings`**：`SettingsProvider` → `SettingsForms`，**删掉了 `ctx.settings.register()` / `get()`**；
 > 2. **`dsh-jobs`**：**删掉了 `ctx.jobs.onJobDone()`**，改成 `ctx.jobs.events.subscribe(filter, listener)`，结算经 `settled` 事件（带 `job` 投影与 `cause`）；
 > 3. **`dsh-shell`**：**`run(spec)` → `execute(spec)`**，且 `execute()` 返回的是进程句柄，完整前台结果要再 `await handle.result()`。
 >
 > 老代码在 `apply()` 里抛 `TypeError` → DSH 判定该 entry **"did not activate"** → 表现就是**桌宠整个消失**（连浏览器半侧都不挂）。0.3.3 逐一适配（settings 走 profile 表单模型 + `.volatile()` + `ctx.fiber.config` 解包；jobs 走事件流并保留 old-API 回退；shell 兼容 `execute()/run()` 两条路径），并且**把每段可选功能的装配各自兜住**——以后再有单个 API 漂移，只会丢掉那一个功能（日志一条 warn），不会让桌宠从页面上消失。
-> `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.1.7-alpha.1`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线这条范围也要跟着更新，否则 `pnpm install` 会提示未满足 peer（只是警告，不影响安装与运行）。
+> `package.json` 的 `peerDependencies` 随 DSH 的 alpha 线走（`^0.2.0-rc.1`）：npm/pnpm 的 semver 规则要求 peer 范围里必须点名**同 patch 的预发布版本**才能算满足，所以每次 DSH 换 alpha 线这条范围也要跟着更新。**DSH ≥0.2.0 起这条范围不只是警告**：运行时会在启动前做兼容性预检，范围不满足则该 bundle 被拒绝加载（`skipping profile bundle`，桌宠完全不出现），需在 profile 目录授权 exact-version 豁免或把范围升到当前版本线。
 > 升级后如要跑一遍兼容性自检（**只有源码工作区带 `scripts/`，npm 包里不含**）：`cd D:\deepseek-harness && node --import tsx/esm "<源码工作区>\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"`（32 项检查：settings API 形状、`apply()` 激活、inject 全覆盖、零功能跳过、7 条路由、子会话计费端到端、volatile 解包、`/state` 权威 running、jobs 事件流、shell execute/result）。
 
 ---
@@ -198,6 +200,13 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.5（未发布）
+- **修复：法定节假日被误按高峰计价，费用最高虚高一倍**。官方定价页口径是「高峰 = UTC 周一至周五的 01:00-04:00 与 06:00-10:00（北京 9:00-12:00、14:00-18:00），**周末与中国法定节假日整天低峰**」，而原先的 `isPeakBeijing()` 只判了周末、没有节假日表 —— 于是春节/国庆这类落在工作日的长假会被按高峰算，1M 未命中输入 + 1M 输出在 9/10 档下会从实际的 **5 元虚报成 10 元**。
+- 新增 `CN_STATUTORY_HOLIDAYS`（[`lib/usage.js`](lib/usage.js)），按国务院办公厅《关于 2026 年部分节假日安排的通知》（国办发明电〔2025〕7 号）逐条录入 2026 年 **33 个放假日**；客户端 `lib/client.js` 的 `isPeakNow()` 同步镜像同一张表（浏览器半侧拿不到宿主模块，只能复制，已加注释互指）。
+- **调休上班的周末仍按低峰**：官方以"UTC 周一至周五"判工作日，2026-01-04(日)、02-14/02-28/05-09/09-20/10-10(六) 这些补班日仍是日历周末，官方定价页明确 "including weekends ... in full"，所以这些日期有意不入表。
+- 新增单测 [`test/holiday-peak.test.mjs`](test/holiday-peak.test.mjs)（10 项）：节假日整天低峰、调休补班日低峰、节前节后工作日不受影响、北京时间跨日切分、非法时间戳不抛错、**宿主与客户端两份实现逐时刻对拍**（2026 全年 + 2027 初，约 4700 个时刻，含 09:00/12:00/14:00/18:00 边界分钟）、以及端到端断言"节假日 5 元 vs 工作日 10 元"。
+- **维护点**：该表需按年扩（2027 年安排预计 2026 年 11 月前后公布）。缺年份只会把法定假日误判成高峰（偏高），不会反向少算。看板底纹/费用弹层文案已同步注明"周末与法定节假日整天低峰"。
 
 ### 0.3.4
 - **修复：Agent 工作时宠物可能永远停在随机（待机）状态 —— 也就是"手动点停止后收不到停止状态"那个现象**。根因有两层：
