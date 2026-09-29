@@ -198,3 +198,29 @@ test('会话费用条目适配 DSH 0.1.6-alpha.2 的 composer dock（横向 flex
     assert.equal(body.includes(forbidden), false, '.dsh-cost-root 不得再带旧布局的 ' + forbidden);
   }
 });
+
+test('触摸屏拖拽：#4 —— 视频上必须禁用浏览器手势（touch-action:none）', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  // 桌宠的拖拽链路是 Pointer Events：pointerdown 只记起点 + setPointerCapture，
+  // pointermove 超过 5px 才算拖拽，pointerup 收尾（pointercancel 也走收尾）。
+  // 触屏上如果 .dsh-pet-video 没有 touch-action:none，浏览器会把这一按当成
+  // 平移/缩放手势并先发 pointercancel —— 拖拽在起步前就被结束，
+  // 现象就是「触摸屏上宠物拖不动」（issue #4）。
+  const rule = /'\.dsh-pet-video\{([^}]*)\}'/.exec(source);
+  assert.ok(rule !== null, '必须存在 .dsh-pet-video 规则');
+  const body = rule[1];
+  assert.ok(
+    body.includes('touch-action:none'),
+    '.dsh-pet-video 必须写 touch-action:none，否则触屏拖拽会被 pointercancel 打断',
+  );
+  // 拖拽必须始终走 Pointer Events（鼠标 / 触控 / 触控笔共用同一条路径）
+  for (const handler of ['onPointerDown', 'onPointerMove', 'onPointerUp', 'onPointerCancel']) {
+    assert.ok(source.includes(handler), '拖拽必须走 Pointer Events，缺少 ' + handler);
+  }
+  assert.ok(source.includes('setPointerCapture'), '按下时必须 setPointerCapture（拖出元素仍要收到 move）');
+  // 看板标题/缩放手柄已有同样写法：这条不变式不能只在视频上成立
+  for (const cls of ['dsh-pet-dash-head', 'dsh-pet-dash-resize']) {
+    const other = new RegExp('\\.' + cls + '\\{[^}]*touch-action:none').test(source);
+    assert.ok(other, '.' + cls + ' 也应保持 touch-action:none（同一套手势约定）');
+  }
+});
