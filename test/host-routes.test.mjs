@@ -180,3 +180,41 @@ test('宿主与浏览器半侧的投影键必须一致（写错就是费用 pill
   assert.equal(hostKey[1].includes('.'), false, '键名不该带点号');
   assert.notEqual(hostKey[1], 'costUsage', '不得再用通用键名 costUsage（issue #1）');
 });
+
+test('费用显示开关：schema 里五个键都存在且默认 true', () => {
+  const source = readFileSync(fileURLToPath(new URL('../lib/index.js', import.meta.url)), 'utf8');
+  for (const key of ['costPillSession', 'costPillTurn', 'costInBubble', 'costBalanceButton', 'costDashboard']) {
+    // 必须 .default(true).volatile()：前者保证默认开，后者保证它能出现在设置面板里并被写回
+    const pattern = new RegExp(key + ':\\s*Schema\\.boolean\\(\\)\\.default\\(true\\)\\.volatile\\(\\)');
+    assert.ok(pattern.test(source), '缺少费用显示开关 ' + key);
+  }
+});
+
+test('费用显示开关：costBalanceButton 关闭时余额响应不再附带今日用量', async () => {
+  const credentials = { resolve: async () => ({ value: 'sk-test-123456' }) };
+  const fetchStub = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ balance_infos: [{ currency: 'CNY', total_balance: '1.00' }] }),
+  });
+
+  const off = makeCtx({ credentials, config: { costBalanceButton: false } });
+  apply(off.ctx, off.ctx.fiber.config);
+  const hidden = await withFetch(fetchStub, () => hit(off.routes, '/api/whale-balance'));
+  assert.equal(hidden.json.ok, true);
+  assert.equal('usage' in hidden.json, false, '关掉 💰 按钮后不应再计算/返回今日用量');
+
+  const on = makeCtx({ credentials });
+  apply(on.ctx, on.ctx.fiber.config);
+  const shown = await withFetch(fetchStub, () => hit(on.routes, '/api/whale-balance'));
+  assert.equal(shown.json.ok, true);
+  assert.ok('usage' in shown.json, '默认（开关为开）必须照旧返回今日用量');
+});
+
+test('费用显示开关：气泡的花费行必须是配置驱动的（接线断言）', () => {
+  const source = readFileSync(fileURLToPath(new URL('../lib/index.js', import.meta.url)), 'utf8');
+  // 只加开关不够：taskSummaryLines 的 withCost 必须真的接上配置，否则开关写了也不生效
+  assert.ok(
+    /taskSummaryLines\(durStr,\s*computeTaskUsage\(ctx,\s*taskSince\),\s*\{\s*withCost:\s*resolveConfig\(\)\.costInBubble !== false/.test(source),
+    '任务完成气泡必须把 costInBubble 传给 taskSummaryLines({ withCost })',
+  );
+});

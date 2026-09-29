@@ -185,6 +185,13 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 | 看板窗口天数 | 日趋势保留并展示的天数 | 7 天 |
 | 长任务提醒阈值 | 工作超过 N 分钟提醒 | 10 分钟 |
 | 天气城市 | 留空 = 自动定位 | 空 |
+| 费用显示：会话费用 pill | 输入框下方那条「费用 ≈¥x.xx」（与 dsh-cost-meter 重合时可关） | 开 |
+| 费用显示：本轮费用 pill | 每条回复动作行里的本轮费用 | 开 |
+| 费用显示：任务完成气泡花费 | 气泡里的花费与三桶（关掉仍保留「用时/消耗」） | 开 |
+| 费用显示：💰 余额按钮 | 余额 + 今日花费气泡（与 cost-meter 的余额/今日花费重合） | 开 |
+| 费用显示：📊 分时段花费看板 | 小时/日趋势看板 | 开 |
+
+> **与 dsh-cost-meter 共存**：两个插件在「本会话费用 / 今日花费 / 余额 / 峰谷」上有功能重合（它还有预算、Coding Plan 额度、价目同步等我们不做的东西）。所以 0.3.6 起把**我们这边每个显示费用的位置都做成了独立开关**（上表最后五行，默认全开）。关掉只影响显示 —— 费用投影、分时段账本与所有 `/api/whale-pet/*` 路由照常统计，随时开回来即可。另外我们的会话投影键已改为 `whalePetCost`，不会再和它的 `costUsage` 撞键（[issue #1](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/1)）。
 
 ---
 
@@ -217,7 +224,16 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
   - 样式仍是**单一来源**：同一份 CSS 文本既注入 `document.head`，也注入 shadow，避免两处手抄漂移。播放逻辑（`switchTo` 的 `src`/`load()`/`classList`/`play()`/`pause()`/`onended`）操作的一直是元素引用，**未做任何改动**。
   - `test/client-bundle.test.mjs` 新增静态不变式：必须 `attachShadow` + `mode:'closed'`、不得再有 `h('video'`、必须有 `replaceChildren`/`WeakMap`、**不得出现 `:host-context`**、必须有 `--dsh-pet-flip` 桥接、事件必须走 `handlersRef`，并断言 shadow 的 effect 声明在 `switchTo` 的 effect **之前**（顺序错了首次挂载会空白）。
 - **修复：与 dsh-cost-meter 的会话投影键撞名**（[issue #1](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/1)）。DSH 的 `sessionProjections` 把键当**全局命名空间**：同一个键被两个不同 `stateVersion` 注册时直接抛错（`is already registered at stateVersion 9; refusing to share it with stateVersion 2`）。两个插件都用 `costUsage` —— 0.2.0 时代的表现是**整条 entry 装配失败、桌宠直接消失**；0.3.3 起每段功能都被 `safe()` 兜住，桌宠不再消失，但我们的费用 pill 会去读**别人的** `costUsage` 投影（形状不同 → 数字错或报错）。现在投影键改为带前缀的 **`whalePetCost`**（[`lib/cost-projection.js`](lib/cost-projection.js)），浏览器半侧两处 `useProjection()` 同步改名。
-- **新增宿主半侧集成测试** [`test/host-routes.test.mjs`](test/host-routes.test.mjs)（6 项）：用假 ctx **真跑 `apply()`**、拿它注册的路由、用桩 `fetch` 真打一遍 —— 覆盖路由清单、天气取值（城市来自设置）、失败文案、余额 401、**投影撞名时 `apply()` 不得整体失败（零功能跳过）**，以及**宿主与浏览器半侧的投影键必须一致**（写错就是费用 pill 静默失灵）。这层测试正好补上开发期踩到的一个缝：天气的模块级函数误读了 `applyInner` 闭包里的 `resolveConfig`，单测全绿而真机 502（`resolveConfig is not defined`）—— 现在 `scripts/verify-dsh-0.1.7.mjs` 也加了一条「失败信息里不得出现 JS 层错误」的断言。
+- **新增：费用显示逐处开关**（与 [dsh-cost-meter](https://www.npmjs.com/package/dsh-cost-meter) 这类计费插件功能重合时用）。我们显示费用的位置一共 5 处，现在各自可关、默认全开，都在「设置 → 桌宠配置 → 费用显示」里，即时生效：
+  - `costPillSession` —— 输入框下方的「会话费用」pill（composer dock）
+  - `costPillTurn` —— 每条回复动作行的「本轮费用」pill
+  - `costInBubble` —— 任务完成气泡里的花费与三桶（关掉仍保留「用时 / 消耗」，由 `taskSummaryLines(…, { withCost: false })` 实现）
+  - `costBalanceButton` —— 💰 按钮（余额 + 今日花费气泡）；关掉后宿主**也不再计算**今日用量，响应只留余额
+  - `costDashboard` —— 📊 分时段花费看板（按钮与弹层一起关）
+  - **关掉只影响显示**：费用投影、分时段账本与全部 `/api/whale-pet/*` 路由照常统计，随时开回来。
+  - 实现上新增了一个**模块级设置快照**（`publishPetSettings` / `usePetSettings`）：两个费用 pill 是注册在别的槽位上的独立组件，拿不到桌宠内部的 `settingsRef`；所以 `apply()` 先用客户端 config 同步打底（避免"已关但先闪一下"）、再拉一次 `/api/whale-pet/settings` 校准，桌宠每次轮询再把最新设置发布出去 —— volatile 设置不会重挂插件，只能这样推送。
+  - 新增测试：`taskSummaryLines` 的 `withCost` 分支、五个 schema 开关的默认值、`costBalanceButton` 关闭后响应不含 `usage`，以及客户端「每个显示位置都检查了自己的开关 / 提前 return 排在所有 hook 之后 / 设置面板五个标签齐备」的不变式。
+- **新增宿主半侧集成测试** [`test/host-routes.test.mjs`](test/host-routes.test.mjs)（10 项）：用假 ctx **真跑 `apply()`**、拿它注册的路由、用桩 `fetch` 真打一遍 —— 覆盖路由清单、天气取值（城市来自设置）、失败文案、余额 401、**投影撞名时 `apply()` 不得整体失败（零功能跳过）**，以及**宿主与浏览器半侧的投影键必须一致**（写错就是费用 pill 静默失灵）。这层测试正好补上开发期踩到的一个缝：天气的模块级函数误读了 `applyInner` 闭包里的 `resolveConfig`，单测全绿而真机 502（`resolveConfig is not defined`）—— 现在 `scripts/verify-dsh-0.1.7.mjs` 也加了一条「失败信息里不得出现 JS 层错误」的断言。
 
 ### 0.3.5
 - **修复：法定节假日被误按高峰计价，费用最高虚高一倍**。官方定价页口径是「高峰 = UTC 周一至周五的 01:00-04:00 与 06:00-10:00（北京 9:00-12:00、14:00-18:00），**周末与中国法定节假日整天低峰**」，而原先的 `isPeakBeijing()` 只判了周末、没有节假日表 —— 于是春节/国庆这类落在工作日的长假会被按高峰算，1M 未命中输入 + 1M 输出在 9/10 档下会从实际的 **5 元虚报成 10 元**。

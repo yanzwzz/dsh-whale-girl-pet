@@ -266,3 +266,41 @@ test('MPRIS 隐身：#3 —— 动画 video 必须建在 stage 的 closed shadow
   // 五、单一来源：同一份 CSS 文本要给 light DOM 与 shadow 各注入一次
   assert.ok(source.includes("style.textContent = css"), 'shadow 里必须注入同一份 css 文本');
 });
+
+test('费用显示开关：五个显示位置各自受开关控制（与 dsh-cost-meter 重合时可关）', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+
+  // 一、两个费用 pill 各自检查自己的开关
+  assert.ok(source.includes("settingOn(settings, 'costPillSession')"), '会话费用 pill 必须检查 costPillSession');
+  assert.ok(source.includes("settingOn(settings, 'costPillTurn')"), '本轮费用 pill 必须检查 costPillTurn');
+  // 二、💰 余额按钮与 📊 看板（含弹层）用桌宠自己的实时设置
+  assert.ok(source.includes("settingOn(settingsRef.current, 'costBalanceButton')"), '💰 按钮必须检查 costBalanceButton');
+  assert.ok(source.includes("settingOn(settingsRef.current, 'costDashboard')"), '📊 看板必须检查 costDashboard');
+  assert.ok(source.includes("dashOpen && settingOn(settingsRef.current, 'costDashboard')"), '看板弹层也要跟着开关关闭');
+
+  // 三、共享设置快照：pill 是**另外注册**的槽位组件，拿不到桌宠的 settingsRef
+  assert.ok(source.includes('function publishPetSettings('), '必须有模块级设置快照的发布函数');
+  assert.ok(source.includes('function usePetSettings()'), 'pill 必须通过 usePetSettings 订阅');
+  assert.ok(source.includes('publishPetSettings(data.settings)'), '桌宠轮询拿到 settings 后必须发布出去');
+  assert.ok(source.includes("fetch('/api/whale-pet/settings')"), 'apply() 必须拉一次服务端设置做初值校准');
+
+  // 四、开关必须在设置面板里可见（否则用户没法关）
+  for (const label of [
+    '会话费用 pill（输入框下方）',
+    '本轮费用 pill（每条回复动作行）',
+    '任务完成气泡里的花费',
+    '💰 余额按钮（余额 + 今日花费）',
+    '📊 分时段花费看板',
+  ]) {
+    assert.ok(source.includes(label), '设置面板缺少开关：' + label);
+  }
+
+  // 五、React hook 顺序不变式：开关的提前 return 必须在所有 hook 调用之后
+  const pillStart = source.indexOf('function CostPill(props)');
+  const pillEnd = source.indexOf('function TurnCostPill(props)');
+  assert.ok(pillStart > 0 && pillEnd > pillStart, '必须能定位 CostPill / TurnCostPill');
+  const pillBody = source.slice(pillStart, pillEnd);
+  const lastHook = Math.max(pillBody.lastIndexOf('useCostDismiss('), pillBody.lastIndexOf('usePetSettings()'));
+  const guard = pillBody.indexOf("if (!settingOn(settings, 'costPillSession')) return null;");
+  assert.ok(lastHook > 0 && guard > lastHook, '开关的提前 return 必须排在所有 hook 之后（hook 数量不能随开关变化）');
+});

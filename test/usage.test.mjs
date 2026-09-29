@@ -242,6 +242,25 @@ test('taskSummaryLines 在无用量时只显示用时', () => {
   assert.deepEqual(taskSummaryLines('12秒', { ok: false, total: 0 }), ['用时 12秒']);
 });
 
+test('taskSummaryLines：withCost=false 时去掉花费与三桶，只留用时/消耗（费用显示开关）', () => {
+  const usage = {
+    ok: true,
+    total: 1_200_000,
+    costCny: 3.21,
+    costHitCny: 0.28,
+    costMissCny: 0.02,
+    costOutCny: 2.91,
+  };
+  assert.deepEqual(taskSummaryLines('2分35秒', usage, { withCost: false }), [
+    '用时 2分35秒',
+    '消耗 1.20M tokens',
+  ]);
+  // 显式 withCost=true 与不传等价，保证旧调用点行为不变
+  assert.deepEqual(taskSummaryLines('2分35秒', usage, { withCost: true }), taskSummaryLines('2分35秒', usage));
+  // 无用量时两种模式一致
+  assert.deepEqual(taskSummaryLines('12秒', { ok: false, total: 0 }, { withCost: false }), ['用时 12秒']);
+});
+
 test('fmtTokens 与 money 的显示口径', () => {
   assert.equal(fmtTokens(1_234_567), '1.23M');
   assert.equal(fmtTokens(12_345), '12.3k');
