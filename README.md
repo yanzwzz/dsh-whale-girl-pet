@@ -210,6 +210,9 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 
 ## 📝 更新记录
 
+### 0.3.7
+- **与 0.3.6 内容完全相同，仅版本号前移**。原因：0.3.6 已通过 `npm stage publish` 推入 npm 暂存区，但「批准」这一步在 registry 侧始终返回 404（账号未开启 2FA，`npm stage approve` 无法完成在场校验），而暂存记录又会挡住同版本直发（`409 Cannot publish over previously staged version "0.3.6"`）。因此改以 0.3.7 直发 —— 与 0.3.6 没有任何代码差异；GitHub 上 0.3.6 的 release 与 tgz 照旧可用。
+
 ### 0.3.6
 - **修复：触摸屏上宠物拖拽不可用**（[issue #4](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/4)）。根因是 `.dsh-pet-video` 少了 `touch-action:none`：拖拽走 Pointer Events（`pointerdown` 只记起点 + `setPointerCapture`，`pointermove` 超过 5px 才算拖拽，`pointerup` 收尾），触屏上浏览器会先把这一按当成平移/缩放手势并随即发出 `pointercancel`，而 `onPointerCancel` 正好接到收尾逻辑 —— 拖拽在起步前就被结束。桌面端没有这层手势拦截，所以只在触摸屏复现。看板标题与缩放手柄一直是这么写的，只有宠物本体漏了。新增 `test/client-bundle.test.mjs` 不变式：视频必须含 `touch-action:none`、拖拽必须仍走四个 Pointer Events 处理器、`setPointerCapture` 仍在，并顺带锁住看板两处同类写法。
 - **修复：天气 / 余额查询在 Linux / macOS 上必然失败**（[issue #2](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/2)）。旧实现把这两段逻辑写成 **Windows PowerShell 脚本**交给 `ctx.get('shell')` 执行，而 DSH 在非 Windows 平台上的 shell 服务是 `bash -c`，第一行 `[Console]::OutputEncoding` 就报「未找到命令」。现在改成宿主半侧用 Node 的 `fetch` 直连：宿主本身就跑在 Node 里（`engines` 要求 ≥22.19），跨平台行为一致，失败时能带回真实的 HTTP 状态，**也不再需要为「网络」申请 `danger-full-access` 沙箱策略**（`runShell()` / `resolvePolicy()` 随之删除）。
