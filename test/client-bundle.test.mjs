@@ -213,9 +213,12 @@ test('触摸屏拖拽：#4 —— 视频上必须禁用浏览器手势（touch-a
     body.includes('touch-action:none'),
     '.dsh-pet-video 必须写 touch-action:none，否则触屏拖拽会被 pointercancel 打断',
   );
-  // 拖拽必须始终走 Pointer Events（鼠标 / 触控 / 触控笔共用同一条路径）
-  for (const handler of ['onPointerDown', 'onPointerMove', 'onPointerUp', 'onPointerCancel']) {
-    assert.ok(source.includes(handler), '拖拽必须走 Pointer Events，缺少 ' + handler);
+  // 拖拽必须始终走 Pointer Events（鼠标 / 触控 / 触控笔共用同一条路径）。
+  // 【issue #3 之后】video 的事件改成原生 addEventListener + handlersRef 转发，
+  // 所以这里认的是四个事件类型名，而不是 React 的 props 名（props 已不适用于
+  // shadow 内的元素：合成事件跨不过 retarget）。
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    assert.ok(source.includes(type), '拖拽必须走 Pointer Events，缺少事件 ' + type);
   }
   assert.ok(source.includes('setPointerCapture'), '按下时必须 setPointerCapture（拖出元素仍要收到 move）');
   // 看板标题/缩放手柄已有同样写法：这条不变式不能只在视频上成立
@@ -223,4 +226,43 @@ test('触摸屏拖拽：#4 —— 视频上必须禁用浏览器手势（touch-a
     const other = new RegExp('\\.' + cls + '\\{[^}]*touch-action:none').test(source);
     assert.ok(other, '.' + cls + ' 也应保持 touch-action:none（同一套手势约定）');
   }
+});
+
+test('MPRIS 隐身：#3 —— 动画 video 必须建在 stage 的 closed shadow 里', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  // 注释里会解释为什么不能用 :host-context()，所以否定断言只看去掉注释后的代码
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  // 一、两个 video 必须是手工创建 + 挂进 shadow，而不是由 React 渲染进 light DOM。
+  //     KDE 的 plasma-browser-integration 用 MutationObserver 扫 document，把
+  //     "正在播放且时长≥8s" 的 <video> 注册成 MPRIS 播放器（抢走全局媒体键）。
+  assert.ok(code.includes('attachShadow'), '必须把 video 挂进 shadow root（否则会被 MPRIS 扫到）');
+  assert.ok(code.includes("mode: 'closed'"), "shadow 必须是 closed：element.shadowRoot 也要拿到 null");
+  assert.equal(code.includes("h('video'"), false, 'video 不得再由 React 渲染进 light DOM');
+  assert.ok(code.includes("document.createElement('video')"), 'video 必须手工创建');
+  assert.ok(code.includes('replaceChildren'), '重复挂载必须用 replaceChildren 覆盖内部节点，避免 video 堆积');
+  assert.ok(code.includes('WeakMap'), 'shadow root 不可移除且 StrictMode 会跑两遍 effect：必须按舞台元素复用');
+
+  // 二、朝向镜像：跨边界的后代选择器已失效，必须走能穿透 shadow 继承的自定义属性
+  assert.equal(code.includes(':host-context'), false, ':host-context() 在 Firefox/Safari 从未实现，不得使用');
+  assert.ok(code.includes('\'.dsh-pet-root[data-facing="right"]{--dsh-pet-flip:-1}\''), '镜像必须由祖先设置 --dsh-pet-flip');
+  assert.ok(code.includes('transform:scaleX(var(--dsh-pet-flip,1))'), 'shadow 内的 video 必须读 --dsh-pet-flip');
+
+  // 三、交互：React 合成事件靠 light DOM 祖先链匹配 props，而 shadow 里冒出来的
+  //     pointer/click 会被 retarget 成 host —— 必须原生监听 + 转发到最新闭包
+  assert.ok(code.includes('addEventListener'), 'video 交互必须用原生监听');
+  assert.ok(code.includes('handlersRef.current[key]'), '原生监听必须转发到 handlersRef（否则绑在过期闭包上）');
+  assert.ok(code.includes('handlersRef.current = {'), 'handlersRef 必须每次 render 刷新');
+
+  // 四、effect 顺序：shadow 的 effect 必须先于 switchTo 的 effect 声明，
+  //     否则首次挂载时 switchTo 拿到 null，宠物第一帧是空的
+  const shadowAt = code.indexOf('STAGE_SHADOWS.get(stage)');
+  const switchAt = code.indexOf('switchTo(anim, once);');
+  assert.ok(shadowAt > 0, '必须存在建立 shadow 的 effect');
+  assert.ok(switchAt > shadowAt, 'shadow 的 effect 必须声明在 switchTo 的 effect 之前（effect 按声明顺序执行）');
+
+  // 五、单一来源：同一份 CSS 文本要给 light DOM 与 shadow 各注入一次
+  assert.ok(source.includes("style.textContent = css"), 'shadow 里必须注入同一份 css 文本');
 });
