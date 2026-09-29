@@ -194,7 +194,7 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 
 ## 📝 Changelog
 
-### 0.3.5 (unreleased)
+### 0.3.5
 - **Fixed: Chinese public holidays were billed at peak, overstating cost by up to 2x.** The official rule is "peak = 01:00-04:00 and 06:00-10:00 UTC, Monday through Friday (09:00-12:00 and 14:00-18:00 Beijing), **excluding Chinese public holidays**; weekends and Chinese public holidays are off-peak in full", but `isPeakBeijing()` only had the weekend check — so long holidays such as Spring Festival or National Day that fall on weekdays were priced at peak. With the 2026-09-10 card, 1M cache-miss input + 1M output was reported as **10 CNY instead of the actual 5 CNY**.
 - Added `CN_STATUTORY_HOLIDAYS` to [`lib/usage.js`](lib/usage.js), recording all **33 holiday dates** from the State Council's 2026 notice (国办发明电〔2025〕7 号). The browser half mirrors the same table in `lib/client.js`'s `isPeakNow()` (it cannot import host modules, so the table is duplicated with cross-referencing comments).
 - **Make-up work weekend days stay off-peak.** The official rule judges weekdays by UTC Monday–Friday, so the 2026 make-up Saturdays/Sundays (01-04, 02-14, 02-28, 05-09, 09-20, 10-10) remain calendar weekends — the pricing page says "including weekends ... in full" — and are deliberately not listed.
