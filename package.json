@@ -80,11 +80,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-home-paths": "^0.1.7-alpha.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.7-alpha.1",
-    "@deepseek-ai/dsh-session-projection": "^0.1.7-alpha.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.7-alpha.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-home-paths": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-session-projection": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "react": "^18.2.0",
     "zod": "^4.4.3"
   },
@@ -93,7 +93,7 @@
     "这些 peer 是'声明式'的：说明本插件绑定的是哪一版 DSH 的服务与槽位契约。",
     "范围必须点名当前 alpha 线：按 semver 的预发布规则，只有范围里存在与目标版本同 patch 的",
     "预发布比较器时，预发布版本才算满足。所以 '^0.1.0-rc.6' 不满足 0.1.6-alpha.2（pnpm 会提示",
-    "未满足 peer），每换一条 DSH alpha 线（例如 0.1.7-alpha.1）也要同步更新这里。",
+    "未满足 peer），每换一条 DSH alpha 线（例如 0.2.0-rc.1）也要同步更新这里。",
     "分时段看板的历史补扫用 ctx.get('sessionPersistence') 读已落盘会话。",
     "该服务由 @deepseek-ai/dsh-session-persistence-jsonl 提供、已随 dsh-base 组合进 web profile，",
     "插件用 ctx.get 可选取得（拿不到就退化为仅实时统计），所以不在此声名为硬依赖。"
