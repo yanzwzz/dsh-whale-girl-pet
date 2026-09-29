@@ -29,12 +29,18 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # 需要同步的清单：lib 下的全部实现 + 文档 + 包清单 + patch
+# 【维护点】lib/ 下新增模块时必须同时加进这里：本脚本按清单逐文件比对，漏掉的模块
+# 不会进副本，而 index.js 会 import 它 —— 表现是重启后插件直接不激活（桌宠消失）。
+# lib/subtree.js（0.3.3 新增）曾漏在这里，0.3.6 与 weather/balance 一并补上。
 $files = @(
     'lib\index.js',
     'lib\client.js',
     'lib\usage.js',
     'lib\usage-ledger.js',
     'lib\cost-projection.js',
+    'lib\subtree.js',
+    'lib\weather.js',
+    'lib\balance.js',
     'lib\types\index.d.ts',
     'lib\types\client\index.d.ts',
     'cordis.patch.yml',

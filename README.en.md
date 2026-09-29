@@ -105,7 +105,9 @@ A cost pill next to the shipped token-usage pill shows the session's running cos
 Next to the shipped "Usage X tok" pill, a "Cost ≈¥x.xx" pill shows **this turn's** cache-hit / cache-miss / output amounts plus its peak/off-peak split, read from the same `costUsage` projection (`byTurn`). Subagents dispatched during that turn are attributed to it by their session's creation time (and listed as a "Sub-sessions" row too).
 
 ### ☁️ Tomorrow's weather (☁️ button)
-Tomorrow-first forecast; supports Chinese city names / auto-locate; WMO codes mapped to Chinese locally.
+Tomorrow-first forecast; supports Chinese city names / auto-locate; **WWO codes mapped to Chinese locally** (wttr.in returns WWO three-digit codes: 113 clear, 116 partly cloudy, 122 overcast).
+
+> The host half calls wttr.in with Node's `fetch` — **no shell involved**, so Windows / Linux / macOS behave identically and no network sandbox policy is needed (since 0.3.6).
 
 ### 🍪 Feeding
 Eats a "TOKEN" fish snack (30s cooldown). Click / double-click / drag each have dedicated animations.
@@ -193,6 +195,14 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 ---
 
 ## 📝 Changelog
+
+### 0.3.6 (unreleased)
+- **Fixed: dragging the pet does nothing on touchscreens** ([issue #4](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/4)). `.dsh-pet-video` was missing `touch-action:none`: dragging uses Pointer Events (`pointerdown` only records the origin and calls `setPointerCapture`, `pointermove` past 5px starts the drag, `pointerup` finishes it), and on touch the browser first reads the press as a pan/zoom gesture and fires `pointercancel` — which our `onPointerCancel` maps to the drag-finishing handler, so the drag ended before it began. Desktop has no such gesture interception, which is why only touchscreens were affected. The dashboard header and resize handle already declared it; only the pet body was missing. Added an invariant to `test/client-bundle.test.mjs` (the video must declare `touch-action:none`, dragging must still use all four Pointer Events handlers, `setPointerCapture` must stay).
+- **Fixed: weather / balance queries always failed on Linux and macOS** ([issue #2](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/2)). Both were **Windows PowerShell scripts** executed through `ctx.get('shell')`, while DSH's shell service on other platforms is `bash -c` — the first line (`[Console]::OutputEncoding`) already failed. They now use the host's Node `fetch` directly (the host runs on Node, `engines` requires ≥22.19): identical on every platform, real HTTP statuses on failure, and **no `danger-full-access` sandbox policy for network any more** (`runShell()` / `resolvePolicy()` removed).
+  - Shaping moved into the zero-dependency pure modules [`lib/weather.js`](lib/weather.js) and [`lib/balance.js`](lib/balance.js). The fields returned to the browser half are byte-for-byte the same, so the client is untouched.
+  - Also fixed a **real defect** found while porting: wttr.in returns **WWO** codes (113 clear, 116 partly cloudy, 122 overcast), but the old table was WMO, whose `>= 95 → ⛈️/雷雨` branch swallowed every three-digit code — the icon was permanently ⛈️ and the description permanently "雷雨" (the reporter's own live output, `"icon":"⛈️","tomorrowDesc":"雷雨"`, carries that fingerprint). Codes ≥ 100 now use `WWO_TABLE` (the 48 standard codes plus the observed 149 haze); codes < 100 keep the WMO table.
+  - Auto-locate no longer fails the whole query when reverse geocoding fails: it falls back to wttr's own area name and then to "当前位置".
+  - Added [`test/weather.test.mjs`](test/weather.test.mjs) and [`test/balance.test.mjs`](test/balance.test.mjs); section 7 of `scripts/verify-dsh-0.1.7.mjs` changed from "must call `shell.execute`" to "**must never call the shell**", and now asserts the failure text carries no bash/PowerShell syntax errors.
 
 ### 0.3.5
 - **Fixed: Chinese public holidays were billed at peak, overstating cost by up to 2x.** The official rule is "peak = 01:00-04:00 and 06:00-10:00 UTC, Monday through Friday (09:00-12:00 and 14:00-18:00 Beijing), **excluding Chinese public holidays**; weekends and Chinese public holidays are off-peak in full", but `isPeakBeijing()` only had the weekend check — so long holidays such as Spring Festival or National Day that fall on weekdays were priced at peak. With the 2026-09-10 card, 1M cache-miss input + 1M output was reported as **10 CNY instead of the actual 5 CNY**.

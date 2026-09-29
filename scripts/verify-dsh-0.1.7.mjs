@@ -317,15 +317,27 @@ check('settled(completed) 产出了"后台任务完成"通知', queued.includes(
 check('cause=teardown 的结算被忽略（不算任务完成）', !queued.includes('teardown-job'))
 
 // ---------------------------------------------------------------------------
-// 7. shell 路径：天气路由必须走 0.1.7 的 execute()+result()（老代码用 run()）
+// 7. 跨平台路径：天气 / 余额不再经过 shell，改由宿主 Node 直连（issue #2）
+//    旧实现把这两段写成 Windows PowerShell 脚本交给 shell 执行——DSH 在 Linux/macOS
+//    上的 shell 服务是 bash -c，第一行就语法错误，所以这两颗按钮只在 Windows 可用。
+//    这里断言：桩里的 shell **一次都没被调用**，且返回的是网络/HTTP 层面的结果
+//    （不是 bash / PowerShell 的语法错误）。
 // ---------------------------------------------------------------------------
-console.log('\n[7] shell 路径（0.1.7 把 run() 换成了 execute()）')
+console.log('\n[7] 天气 / 余额不再经过 shell（issue #2：Linux/macOS 上旧实现必然失败）')
 const weather = await hit('/api/whale-pet/weather', { url: '/api/whale-pet/weather' })
 console.log(`  /api/whale-pet/weather → ${weather.status} ${(weather.text ?? '').slice(0, 160)}`)
-check('调到 shell.resolve + shell.execute', shellCalls.resolve > 0 && shellCalls.execute > 0,
-  JSON.stringify(shellCalls))
-check('execute → result() → stdout.text 链路通（把桩的错误原样透出来）',
-  weather.json?.error === 'stub-shell', weather.text?.slice(0, 200))
+const weatherError = String(weather.json?.error ?? '')
+check('天气路由没有调用 shell.resolve / shell.execute', shellCalls.resolve === 0 && shellCalls.execute === 0, JSON.stringify(shellCalls))
+check('返回可 JSON 化的结果（成功给 tomorrowIcon，失败给 error）',
+  weather.json !== undefined && (weather.json.ok === true ? typeof weather.json.tomorrowIcon === 'string' : typeof weatherError === 'string'),
+  weather.text?.slice(0, 200))
+check('失败时不再出现 shell 语法错误特征（bash / PowerShell）',
+  !/bash|PSEdition|Invoke-RestMethod|未找到命令|unexpected token/i.test(weatherError), weatherError)
+const balanceAgain = await hit('/api/whale-balance')
+check('余额路由同样没有调用 shell', shellCalls.resolve === 0 && shellCalls.execute === 0, JSON.stringify(shellCalls))
+check('余额路由仍返回完整结构（ok + 今日用量）',
+  balanceAgain.json !== undefined && typeof balanceAgain.json.ok === 'boolean' && balanceAgain.json.usage !== undefined,
+  balanceAgain.text?.slice(0, 200))
 
 // ---------------------------------------------------------------------------
 console.log('')

@@ -109,7 +109,9 @@
 就在官方「用量 X tok」旁边多一枚「费用 ≈¥x.xx」，点开是**这一轮**的缓存命中 / 缓存未命中 / 输出三桶金额与高峰 / 空闲拆分。数据来自同一个 `costUsage` 投影的 `byTurn`，与会话累计同源；**本轮派发出去的子代理开销按"子会话创建时刻落在哪一轮"归到该轮**（明细里同样单列「子会话」）。
 
 ### ☁️ 明日天气（☁️ 按钮）
-主打明日预报（今日天气抬头就能看见 😄），支持中文城市名 / 自动定位，WMO 天气码本地中文映射。
+主打明日预报（今日天气抬头就能看见 😄），支持中文城市名 / 自动定位，**WWO 天气码本地中文映射**（wttr.in 返回的是 WWO 三位码：113=晴、116=局部多云、122=阴）。
+
+> 宿主半侧用 Node 的 `fetch` 直接请求 wttr.in，**不经过 shell**：Windows / Linux / macOS 行为一致，也不需要为「网络」申请沙箱策略（0.3.6 起）。
 
 ### 🍪 投喂互动
 吃「TOKEN」压字小鱼干（30 秒冷却），点击/双击/拖拽各有专属动画。
@@ -200,6 +202,14 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.6（未发布）
+- **修复：触摸屏上宠物拖拽不可用**（[issue #4](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/4)）。根因是 `.dsh-pet-video` 少了 `touch-action:none`：拖拽走 Pointer Events（`pointerdown` 只记起点 + `setPointerCapture`，`pointermove` 超过 5px 才算拖拽，`pointerup` 收尾），触屏上浏览器会先把这一按当成平移/缩放手势并随即发出 `pointercancel`，而 `onPointerCancel` 正好接到收尾逻辑 —— 拖拽在起步前就被结束。桌面端没有这层手势拦截，所以只在触摸屏复现。看板标题与缩放手柄一直是这么写的，只有宠物本体漏了。新增 `test/client-bundle.test.mjs` 不变式：视频必须含 `touch-action:none`、拖拽必须仍走四个 Pointer Events 处理器、`setPointerCapture` 仍在，并顺带锁住看板两处同类写法。
+- **修复：天气 / 余额查询在 Linux / macOS 上必然失败**（[issue #2](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/2)）。旧实现把这两段逻辑写成 **Windows PowerShell 脚本**交给 `ctx.get('shell')` 执行，而 DSH 在非 Windows 平台上的 shell 服务是 `bash -c`，第一行 `[Console]::OutputEncoding` 就报「未找到命令」。现在改成宿主半侧用 Node 的 `fetch` 直连：宿主本身就跑在 Node 里（`engines` 要求 ≥22.19），跨平台行为一致，失败时能带回真实的 HTTP 状态，**也不再需要为「网络」申请 `danger-full-access` 沙箱策略**（`runShell()` / `resolvePolicy()` 随之删除）。
+  - 整形逻辑抽成零依赖纯函数模块：[`lib/weather.js`](lib/weather.js)（WWO/WMO 码表 + 明日天气选取）、[`lib/balance.js`](lib/balance.js)。返回给浏览器半侧的字段与旧实现**逐字一致**，客户端无需改动。
+  - 顺带修掉一个**真实缺陷**：wttr.in 的 `weatherCode` 是 **WWO 码**（113=晴、116=局部多云、122=阴），而旧码表是 WMO 的，WMO 表里 `>= 95 → ⛈️/雷雨` 会把所有三位码吞掉 —— 表现就是**天气图标永远是 ⛈️、描述永远是「雷雨」**（issue #2 报告里真机复测的输出 `"icon":"⛈️","tomorrowDesc":"雷雨"` 正是这个 bug 的指纹）。现在 `>= 100` 走 `WWO_TABLE`（标准 48 码 + 实测出现的 149=霾），`< 100` 仍按 WMO 表兼容。
+  - 自动定位的地名反查失败不再让整条失败：依次退回 wttr 站点名、「当前位置」（旧实现会因此连天气都不显示）。
+  - 新增单测 [`test/weather.test.mjs`](test/weather.test.mjs) 与 [`test/balance.test.mjs`](test/balance.test.mjs)；`scripts/verify-dsh-0.1.7.mjs` 第 7 段由「必须调到 `shell.execute`」改为「**一次都不能调到 shell**」，并断言失败信息里不再出现 bash / PowerShell 语法错误特征。
 
 ### 0.3.5
 - **修复：法定节假日被误按高峰计价，费用最高虚高一倍**。官方定价页口径是「高峰 = UTC 周一至周五的 01:00-04:00 与 06:00-10:00（北京 9:00-12:00、14:00-18:00），**周末与中国法定节假日整天低峰**」，而原先的 `isPeakBeijing()` 只判了周末、没有节假日表 —— 于是春节/国庆这类落在工作日的长假会被按高峰算，1M 未命中输入 + 1M 输出在 9/10 档下会从实际的 **5 元虚报成 10 元**。
