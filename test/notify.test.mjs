@@ -81,8 +81,18 @@ test('只在后台提示：前台时直接返回，且三个动作各自受开�
   );
 });
 
-test('响铃时机固定为"全部完成后"：不给选项，还有任务在跑就不响', () => {
-  assert.ok(CLIENT_SOURCE.includes('if (runningNow) return;'), '还有任务在跑时必须不响（等最后一拍）');
+test('三种提示都只在"全部完成后"那一拍出现（不给"每个都提示"的选项）', () => {
+  const gate = CLIENT_SOURCE.indexOf('if (runningNow) return;');
+  assert.ok(gate > 0, '必须有"还有任务在跑就跳过"的闸门');
+  // 闸门必须排在角标 / 汇总 / 提示音之前：否则子代理、后台任务陆续结束也会亮角标、攒汇总
+  for (const after of [
+    "if (settingOn(s, 'notifyBadge'))",
+    "if (settingOn(s, 'notifySummary'))",
+    "if (settingOn(s, 'notifySound'))",
+  ]) {
+    const at = CLIENT_SOURCE.indexOf(after);
+    assert.ok(at > gate, '闸门必须排在它之前：' + after);
+  }
   // 判定依据必须是宿主同一次响应里现算的 running，而不是本地猜测
   assert.ok(CLIENT_SOURCE.includes('data.running === true'), '必须以宿主返回的 running 为准');
   assert.ok(HOST_SOURCE.includes('running: anyAgentRunning(ctx)'), '宿主必须在 state 响应里带上 running');
