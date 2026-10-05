@@ -31,7 +31,7 @@ test('宿主配置：提示相关字段都必须是 volatile（否则不进设�
     'notifySummary: Schema.boolean().default(true).volatile(),',
     'notifySound: Schema.boolean().default(true).volatile(),',
     'notifySoundVolume: Schema.number().min(0).max(100).default(60).volatile(),',
-    "notifySoundMode: Schema.string().default('each').volatile(),",
+    'notifySoundVolume: Schema.number().min(0).max(100).default(60).volatile(),',
   ]) {
     assert.ok(HOST_SOURCE.includes(line), 'Config 里缺少：' + line);
   }
@@ -81,16 +81,15 @@ test('只在后台提示：前台时直接返回，且三个动作各自受开�
   );
 });
 
-test('响铃时机：每个都响 / 全部完成后才响（可切换）', () => {
-  assert.ok(
-    CLIENT_SOURCE.includes("if ((s.notifySoundMode === 'all' ? 'all' : 'each') === 'all' && runningNow) return;"),
-    'all 模式必须在"还有任务在跑"时不响',
-  );
-  assert.ok(CLIENT_SOURCE.includes("['each', '每个任务完成'], ['all', '全部完成后']"), '设置面板必须给出两种时机');
-  assert.ok(CLIENT_SOURCE.includes("path: ['notifySoundMode']"), '切换必须写回 notifySoundMode');
+test('响铃时机固定为"全部完成后"：不给选项，还有任务在跑就不响', () => {
+  assert.ok(CLIENT_SOURCE.includes('if (runningNow) return;'), '还有任务在跑时必须不响（等最后一拍）');
   // 判定依据必须是宿主同一次响应里现算的 running，而不是本地猜测
-  assert.ok(CLIENT_SOURCE.includes('data.running === true'), 'all 模式必须以宿主返回的 running 为准');
+  assert.ok(CLIENT_SOURCE.includes('data.running === true'), '必须以宿主返回的 running 为准');
   assert.ok(HOST_SOURCE.includes('running: anyAgentRunning(ctx)'), '宿主必须在 state 响应里带上 running');
+  // 选项本身必须彻底移除：宿主 schema、客户端、设置面板都不该再有它
+  assert.ok(!HOST_SOURCE.includes('notifySoundMode'), '宿主 Config 不得再声明 notifySoundMode');
+  assert.ok(!CLIENT_SOURCE.includes('notifySoundMode'), '客户端不得再读 notifySoundMode');
+  assert.ok(!CLIENT_SOURCE.includes("rowStack('响铃时机'"), '设置面板不得再出现"响铃时机"这一行');
 });
 
 test('回来汇总：无论开关如何都要 take() 一次，避免后台累计永远攒着', () => {
@@ -248,7 +247,6 @@ test('响度与排版：峰值接近满刻度、过压缩器，宽控件整行�
   );
   // 排版：右侧并排会把「每个任务完成」这类四字按钮挤成两行
   assert.ok(CLIENT_SOURCE.includes('const rowStack = (label, controls, note)'), '必须有整行堆叠的行样式');
-  assert.ok(CLIENT_SOURCE.includes("rowStack('响铃时机'"), '响铃时机必须用堆叠行');
   assert.ok(CLIENT_SOURCE.includes("rowStack('自定义提示音'"), '自定义提示音必须用堆叠行');
   assert.ok(CLIENT_SOURCE.includes("whiteSpace: 'nowrap'"), '按钮文字不得换行');
   assert.ok(CLIENT_SOURCE.includes("style: { display: 'none' },"), '原生 file input 必须隐藏，改用「选择音频…」按钮触发');
@@ -259,7 +257,7 @@ test('设置面板：四个分页 + 新开关可见 + 每个配置项都能在�
     assert.ok(CLIENT_SOURCE.includes(entry), '设置面板缺少分页：' + entry);
   }
   assert.ok(CLIENT_SOURCE.includes("const [tab, setTab] = useState('notify');"), '默认必须落在完成提醒页');
-  for (const key of ['notifySound', 'notifySoundVolume', 'notifySoundMode', 'notifyBadge', 'notifySummary']) {
+  for (const key of ['notifySound', 'notifySoundVolume', 'notifyBadge', 'notifySummary']) {
     assert.ok(CLIENT_SOURCE.includes("'" + key + "'"), '设置面板里找不到开关：' + key);
   }
   // 强不变式：Config 里每个可写字段都必须在面板出现（size/position 由 DSH 原生表单负责，豁免）
