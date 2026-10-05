@@ -210,12 +210,20 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 
 ## 📝 更新记录
 
+### 未发布
+- **镜像改为"按动画白名单"**：水平镜像现在**只作用于「螃蟹走路」朝右走时**，其余动画（含举牌等画面带字的）一律按原片播放。
+  - 旧实现是"祖先设 `--dsh-pet-flip:-1`、shadow 内的 video 读它"，粒度是**整个朝向**：只要翻过面，之后播的每个动画都会被镜像 —— 举牌类动画的字会变成反字；而且翻面那一刻正在淡出的旧帧会被一起翻转（两个缓冲共用同一个变量）。
+  - 现在镜像落在**单个 video 缓冲元素上的 `.is-flipped` 类**：`shouldMirror(name, dir)` 同时要求"朝右"且"在白名单 `MIRRORED_WHEN_RIGHT` 里"（目前只含 `['螃蟹走路']`，要放行别的动画只需往数组里加名字）。`el.dataset.anim` 记下每个缓冲当前播的是谁，切动画时（`switchTo`）与朝向变化时各重算一次，所以白名单外的动画、以及淡出中的旧帧都不会被连带翻转。
+  - 朝向（`facing`）本身仍然只在「东张西望」播完时翻转、仍然决定漫游方向；向左走不镜像（人物原生朝向就是左侧），只镜像"往右走的螃蟹走路"。
+  - 副作用（知情选择）：`原地漂浮踏步` 不在白名单里，所以它朝右走时**不镜像**，走路姿态与位移方向不一定一致；要一起镜像就往 `MIRRORED_WHEN_RIGHT` 里加它。
+  - `test/client-bundle.test.mjs` 的不变式随之改写：禁止回退到"祖先变量统一镜像"、白名单必须只含螃蟹走路、`shouldMirror` 两个条件缺一不可、`is-flipped` 只允许两处落地点且都必须经过 `shouldMirror`。
+
 ### 0.3.7
 - **与 0.3.6 内容完全相同，仅版本号前移**。原因：0.3.6 已通过 `npm stage publish` 推入 npm 暂存区，但「批准」这一步在 registry 侧始终返回 404（账号未开启 2FA，`npm stage approve` 无法完成在场校验），而暂存记录又会挡住同版本直发（`409 Cannot publish over previously staged version "0.3.6"`）。因此改以 0.3.7 直发 —— 与 0.3.6 没有任何代码差异；GitHub 上 0.3.6 的 release 与 tgz 照旧可用。
 
 ### 0.3.6
 - **修复：触摸屏上宠物拖拽不可用**（[issue #4](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/4)）。根因是 `.dsh-pet-video` 少了 `touch-action:none`：拖拽走 Pointer Events（`pointerdown` 只记起点 + `setPointerCapture`，`pointermove` 超过 5px 才算拖拽，`pointerup` 收尾），触屏上浏览器会先把这一按当成平移/缩放手势并随即发出 `pointercancel`，而 `onPointerCancel` 正好接到收尾逻辑 —— 拖拽在起步前就被结束。桌面端没有这层手势拦截，所以只在触摸屏复现。看板标题与缩放手柄一直是这么写的，只有宠物本体漏了。新增 `test/client-bundle.test.mjs` 不变式：视频必须含 `touch-action:none`、拖拽必须仍走四个 Pointer Events 处理器、`setPointerCapture` 仍在，并顺带锁住看板两处同类写法。
-- **修复：天气 / 余额查询在 Linux / macOS 上必然失败**（[issue #2](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/2)）。旧实现把这两段逻辑写成 **Windows PowerShell 脚本**交给 `ctx.get('shell')` 执行，而 DSH 在非 Windows 平台上的 shell 服务是 `bash -c`，第一行 `[Console]::OutputEncoding` 就报「未找到命令」。现在改成宿主半侧用 Node 的 `fetch` 直连：宿主本身就跑在 Node 里（`engines` 要求 ≥22.19），跨平台行为一致，失败时能带回真实的 HTTP 状态，**也不再需要为「网络」申请 `danger-full-access` 沙箱策略**（`runShell()` / `resolvePolicy()` 随之删除）。
+- **修复：天气 / 余额查询在 Linux / macOS 上必然失败**（[issue #2](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/2)）。旧实现把这两段逻辑写成 **Windows PowerShell 脚本**交给 `ctx.get('shell')` 执行，而 DSH 在非 Windows 平台上的 shell 服务是 `bash -c`，第一行 `[Console]::OutputEncoding` 就报「未找到命令」。现在改成宿主半侧用 Node 的 `fetch` 直连：宿主本身就跑在 Node 里（`engines` 要求 ≥22.19），跨平台行为一致，失败时能带回真实的 HTTP 状态，**也不再需要为「网络」放宽沙箱策略**（`runShell()` / `resolvePolicy()` 随之删除）。
   - 整形逻辑抽成零依赖纯函数模块：[`lib/weather.js`](lib/weather.js)（WWO/WMO 码表 + 明日天气选取）、[`lib/balance.js`](lib/balance.js)。返回给浏览器半侧的字段与旧实现**逐字一致**，客户端无需改动。
   - 顺带修掉一个**真实缺陷**：wttr.in 的 `weatherCode` 是 **WWO 码**（113=晴、116=局部多云、122=阴），而旧码表是 WMO 的，WMO 表里 `>= 95 → ⛈️/雷雨` 会把所有三位码吞掉 —— 表现就是**天气图标永远是 ⛈️、描述永远是「雷雨」**（issue #2 报告里真机复测的输出 `"icon":"⛈️","tomorrowDesc":"雷雨"` 正是这个 bug 的指纹）。现在 `>= 100` 走 `WWO_TABLE`（标准 48 码 + 实测出现的 149=霾），`< 100` 仍按 WMO 表兼容。
   - 自动定位的地名反查失败不再让整条失败：依次退回 wttr 站点名、「当前位置」（旧实现会因此连天气都不显示）。
@@ -313,7 +321,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 - **0.1.6**：适配 DSH 0.1.2-alpha.4 Session API（`snapshotEvents` 取代 `events` getter），修复花费/用量恒为 0。
 - **0.1.5**：0.1.4 废弃并还原 0.1.2；移除对 `dsh-settings` `settingsNamespace` 导出的依赖（改用字面量命名空间）。
 - **0.1.3**：周末全天按空闲计价（2026-08-23 规则）。
-- **0.1.2**：天气 / 余额查询强制 `danger-full-access` 沙箱策略（需要网络）。
+- **0.1.2**：天气 / 余额查询需要放宽沙箱策略才能联网。
 
 </details>
 

@@ -6,8 +6,10 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 
 const CLIENT_PATH = fileURLToPath(new URL('../lib/client.js', import.meta.url));
@@ -245,10 +247,22 @@ test('MPRIS 隐身：#3 —— 动画 video 必须建在 stage 的 closed shadow
   assert.ok(code.includes('replaceChildren'), '重复挂载必须用 replaceChildren 覆盖内部节点，避免 video 堆积');
   assert.ok(code.includes('WeakMap'), 'shadow root 不可移除且 StrictMode 会跑两遍 effect：必须按舞台元素复用');
 
-  // 二、朝向镜像：跨边界的后代选择器已失效，必须走能穿透 shadow 继承的自定义属性
+  // 二、镜像必须"按动画、按单个缓冲"生效：只有白名单动画（螃蟹走路）朝右走时才翻转。
+  //     旧写法（祖先设自定义属性、shadow 内的 video 读变量）会把**所有**动画一起镜像 ——
+  //     举牌这类画面带字的动画会被翻成反字，翻面瞬间正在淡出的旧帧也会被连带翻转。
+  //     所以这里既锁定新的落地点，也禁止回退到"祖先变量统一镜像"。
   assert.equal(code.includes(':host-context'), false, ':host-context() 在 Firefox/Safari 从未实现，不得使用');
-  assert.ok(code.includes('\'.dsh-pet-root[data-facing="right"]{--dsh-pet-flip:-1}\''), '镜像必须由祖先设置 --dsh-pet-flip');
-  assert.ok(code.includes('transform:scaleX(var(--dsh-pet-flip,1))'), 'shadow 内的 video 必须读 --dsh-pet-flip');
+  assert.equal(code.includes('--dsh-pet-flip'), false, '不得再用祖先自定义属性统一镜像（会把所有动画一起翻掉）');
+  assert.ok(code.includes("'.dsh-pet-video.is-flipped{transform:scaleX(-1)}'"), '镜像必须是 .dsh-pet-video.is-flipped 上的 scaleX(-1)');
+  assert.ok(code.includes("const MIRRORED_WHEN_RIGHT = ['螃蟹走路']"), '镜像白名单必须只含螃蟹走路');
+  assert.ok(
+    /shouldMirror = \(name, dir\) => dir === 'right' && MIRRORED_WHEN_RIGHT\.includes\(name\)/.test(code),
+    'shouldMirror 必须同时要求"朝右"且"在白名单里"（两个条件缺一不可）',
+  );
+  assert.ok(code.includes("el.classList.toggle('is-flipped', shouldMirror(next, facingRef.current))"), 'switchTo 必须按即将播放的动画设置 is-flipped');
+  assert.ok(code.includes('el.dataset.anim = next'), '必须记下每个缓冲当前播的动画，朝向变化时据此重算镜像');
+  const toggleSites = code.match(/classList\.toggle\('is-flipped', shouldMirror\(/g) || [];
+  assert.equal(toggleSites.length, 2, 'is-flipped 只应有两处落地点（切动画 + 朝向变化），且都必须经过 shouldMirror');
 
   // 三、交互：React 合成事件靠 light DOM 祖先链匹配 props，而 shadow 里冒出来的
   //     pointer/click 会被 retarget 成 host —— 必须原生监听 + 转发到最新闭包
@@ -303,4 +317,42 @@ test('费用显示开关：五个显示位置各自受开关控制（与 dsh-cos
   const lastHook = Math.max(pillBody.lastIndexOf('useCostDismiss('), pillBody.lastIndexOf('usePetSettings()'));
   const guard = pillBody.indexOf("if (!settingOn(settings, 'costPillSession')) return null;");
   assert.ok(lastHook > 0 && guard > lastHook, '开关的提前 return 必须排在所有 hook 之后（hook 数量不能随开关变化）');
+});
+
+test('镜像白名单：只有「螃蟹走路」朝右走时镜像，别的动画一律不镜像', async () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  // 把白名单数组与 shouldMirror 判定式从源码里原样取出来求值 —— 测"行为"而不是"字符串"，
+  // 这样"哪些动画会被镜像"是被真的跑出来的，而不是靠关键字猜的。
+  const listMatch = code.match(/const MIRRORED_WHEN_RIGHT = (\[[^\]]*\]);/);
+  assert.ok(listMatch, '必须能定位 MIRRORED_WHEN_RIGHT 白名单');
+  const fnMatch = code.match(/const shouldMirror = (\(name, dir\) => [^;]+);/);
+  assert.ok(fnMatch, '必须能定位 shouldMirror 判定式');
+
+  // 抠出来的源码写成临时 ESM 模块再 import()：同样是"真的跑一遍"，
+  // 但不使用 eval / new Function（扫描器的 DANGEROUS_DYNAMIC_EXECUTION 规则会判 high）。
+  const dir = mkdtempSync(join(tmpdir(), 'wg-mirror-'));
+  const file = join(dir, 'mirror.mjs');
+  writeFileSync(file, [
+    `export const MIRRORED_WHEN_RIGHT = ${listMatch[1]};`,
+    `export const shouldMirror = ${fnMatch[1]};`,
+    '',
+  ].join('\n'), 'utf8');
+  const mod = await import(pathToFileURL(file).href);
+  const list = mod.MIRRORED_WHEN_RIGHT;
+  const shouldMirror = mod.shouldMirror;
+
+  // 一、唯一该镜像的组合：螃蟹走路 + 朝右
+  assert.equal(shouldMirror('螃蟹走路', 'right'), true, '螃蟹走路朝右走必须镜像');
+  // 二、其余一律不镜像
+  assert.equal(shouldMirror('螃蟹走路', 'left'), false, '螃蟹走路朝左走不得镜像（左侧是原生朝向）');
+  assert.equal(shouldMirror('原地漂浮踏步', 'right'), false, '原地漂浮踏步朝右走不得镜像');
+  for (const name of ['待机呼吸休闲', '东张西望', '举牌不是大肥鱼', '空白举牌', '偷吃Token', '女仆屈膝礼仪', '认真工作', '被鼠标拖拽悬空反馈']) {
+    assert.equal(shouldMirror(name, 'right'), false, name + ' 不在白名单里，朝右走也不得镜像');
+  }
+  // 三、白名单本身只该有螃蟹走路（想放行别的动画时必须同步改这条断言）
+  assert.deepEqual(list, ['螃蟹走路'], '镜像白名单只应含螃蟹走路');
 });
