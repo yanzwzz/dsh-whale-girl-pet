@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Workflow actions must stay pinned to commit SHAs; Dependabot keeps those
+  # pins moving without letting a mutable tag silently change the code we run.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The plugin itself ships zero runtime dependencies (peer-only), but the
+  # manifest is still an automation surface worth tracking.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
