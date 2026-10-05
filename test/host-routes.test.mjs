@@ -214,7 +214,16 @@ test('费用显示开关：气泡的花费行必须是配置驱动的（接线�
   const source = readFileSync(fileURLToPath(new URL('../lib/index.js', import.meta.url)), 'utf8');
   // 只加开关不够：taskSummaryLines 的 withCost 必须真的接上配置，否则开关写了也不生效
   assert.ok(
-    /taskSummaryLines\(durStr,\s*computeTaskUsage\(ctx,\s*taskSince\),\s*\{\s*withCost:\s*resolveConfig\(\)\.costInBubble !== false/.test(source),
+    /taskSummaryLines\(durStr,\s*usage,\s*\{\s*withCost:\s*resolveConfig\(\)\.costInBubble !== false/.test(source),
     '任务完成气泡必须把 costInBubble 传给 taskSummaryLines({ withCost })',
+  );
+  // usage 只算一次，随后同时喂给气泡与（新增的）结构化摘要字段
+  assert.ok(
+    /const usage = computeTaskUsage\(ctx, taskSince\)/.test(source),
+    'computeTaskUsage 必须先赋给 usage 再复用',
+  );
+  assert.ok(
+    /summary\.costCny = usage\.costCny/.test(source),
+    '回来汇总用的 costCny 必须来自同一次 computeTaskUsage',
   );
 });
