@@ -30,7 +30,7 @@ test('宿主配置：提示相关字段都必须是 volatile（否则不进设�
     'notifyBadge: Schema.boolean().default(true).volatile(),',
     'notifySummary: Schema.boolean().default(true).volatile(),',
     'notifySound: Schema.boolean().default(true).volatile(),',
-    'notifySoundVolume: Schema.number().min(0).max(100).default(25).volatile(),',
+    'notifySoundVolume: Schema.number().min(0).max(100).default(60).volatile(),',
     "notifySoundMode: Schema.string().default('each').volatile(),",
   ]) {
     assert.ok(HOST_SOURCE.includes(line), 'Config 里缺少：' + line);
@@ -70,8 +70,8 @@ test('只在后台提示：前台时直接返回，且三个动作各自受开�
   assert.ok(CLIENT_SOURCE.includes("if (settingOn(s, 'notifySound')) {"), '提示音必须接 notifySound');
   // 音量口径：设置里是 0..100，播放前才换算成 0..1
   assert.ok(
-    CLIENT_SOURCE.includes('const pct = Math.max(0, Math.min(100, Number.isFinite(s.notifySoundVolume) ? s.notifySoundVolume : 25));'),
-    '音量必须按 0..100 读取并夹紧（缺省 25）',
+    CLIENT_SOURCE.includes('const pct = Math.max(0, Math.min(100, Number.isFinite(s.notifySoundVolume) ? s.notifySoundVolume : 60));'),
+    '音量必须按 0..100 读取并夹紧（缺省 60）',
   );
   assert.ok(CLIENT_SOURCE.includes('playChime(item.ok !== false, pct / 100);'), '播放前必须换算成 0..1');
   // 接线点必须在 done 分支里，并把权威 running 一起带进去（'all' 模式靠它）
@@ -162,7 +162,7 @@ test('自定义提示音：上传 → 解码 → 播放，失败回退合成音'
   // 设置面板入口：文件选择 + 试听 + 清除
   assert.ok(CLIENT_SOURCE.includes("accept: 'audio/*'"), '设置面板必须给出音频文件入口');
   assert.ok(CLIENT_SOURCE.includes("}, '试听'),"), '必须有试听按钮');
-  assert.ok(CLIENT_SOURCE.includes('}, \'清除\') : null),'), '必须有清除按钮（回到内置合成音）');
+  assert.ok(CLIENT_SOURCE.includes("}, '清除') : null,"), '必须有清除按钮（回到内置合成音）');
   assert.ok(CLIENT_SOURCE.includes('const [soundState, setSoundState] = useState(() => customSound.state());'), '上传/清除后必须重渲染');
 });
 
@@ -187,6 +187,35 @@ test('合成提示音是四个音的短句：成功逐音升高、失败逐音�
 // ---------------------------------------------------------------------------
 // 3. 设置面板：分组 + 不漏开关
 // ---------------------------------------------------------------------------
+test('响度与排版：峰值接近满刻度、过压缩器，宽控件整行堆叠', () => {
+  // 用户把音量拉到 100 还嫌小 —— 根因是原来峰值只有 0.4 那一档
+  const block = (name) => {
+    const m = CLIENT_SOURCE.match(new RegExp('const ' + name + ' = \\[([\\s\\S]*?)\\];'));
+    assert.ok(m, '必须能定位音符表 ' + name);
+    return m[1];
+  };
+  const peaks = [...(block('NOTES_OK') + block('NOTES_FAIL'))
+    .matchAll(/\[\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\]/g)]
+    .map((m) => Number(m[1]));
+  assert.equal(peaks.length, 8, '两张音符表共应有 8 个峰值');
+  assert.ok(Math.min(...peaks) >= 0.7, '峰值不得低于 0.7（原来只有 0.4，拉到 100 仍偏小）');
+  // 四音刻意重叠，峰值抬高后必须靠压缩器兜住
+  assert.ok(CLIENT_SOURCE.includes('createDynamicsCompressor()'), '必须过压缩器，避免叠加削波');
+  assert.ok(CLIENT_SOURCE.includes('gain.connect(out(audio));'), '合成音必须接压缩器输出');
+  assert.ok(CLIENT_SOURCE.includes('gain.connect(chime.bus(audio));'), '自定义音频必须接同一个压缩器输出');
+  // 保持段：一上来就指数衰减会明显偏小
+  assert.ok(
+    CLIENT_SOURCE.includes('gain.gain.setValueAtTime(Math.max(0.001, peak), at + dur * 0.4);'),
+    '必须有保持段（同样的峰值，响度差别很大）',
+  );
+  // 排版：右侧并排会把「每个任务完成」这类四字按钮挤成两行
+  assert.ok(CLIENT_SOURCE.includes('const rowStack = (label, controls, note)'), '必须有整行堆叠的行样式');
+  assert.ok(CLIENT_SOURCE.includes("rowStack('响铃时机'"), '响铃时机必须用堆叠行');
+  assert.ok(CLIENT_SOURCE.includes("rowStack('自定义提示音'"), '自定义提示音必须用堆叠行');
+  assert.ok(CLIENT_SOURCE.includes("whiteSpace: 'nowrap'"), '按钮文字不得换行');
+  assert.ok(CLIENT_SOURCE.includes("style: { display: 'none' },"), '原生 file input 必须隐藏，改用「选择音频…」按钮触发');
+});
+
 test('设置面板：四个分页 + 新开关可见 + 每个配置项都能在面板里找到', () => {
   for (const entry of ["['notify', '完成提醒']", "['timing', '定时与关怀']", "['pet', '宠物与外观']", "['cost', '费用与看板']"]) {
     assert.ok(CLIENT_SOURCE.includes(entry), '设置面板缺少分页：' + entry);
