@@ -95,7 +95,7 @@ test('响铃时机：每个都响 / 全部完成后才响（可切换）', () =>
 
 test('回来汇总：无论开关如何都要 take() 一次，避免后台累计永远攒着', () => {
   assert.ok(CLIENT_SOURCE.includes('const sum = doneSummary.take();'), '回前台必须取走累计');
-  assert.ok(CLIENT_SOURCE.includes("if (!settingOn(settingsRef.current, 'notifySummary')) return;"), '汇总气泡受开关控制');
+  assert.ok(CLIENT_SOURCE.includes("if (!settingOn(s, 'notifySummary')) return;"), '汇总气泡受开关控制');
   assert.ok(
     CLIENT_SOURCE.includes("document.addEventListener('visibilitychange', onReturn);") &&
     CLIENT_SOURCE.includes("window.addEventListener('focus', onReturn);"),
@@ -103,9 +103,47 @@ test('回来汇总：无论开关如何都要 take() 一次，避免后台累计
   );
   // 取走之后必须清零（否则下次回来会重复汇报旧账）
   assert.ok(
-    /take\(\) \{\s*const out = \{ count, durSec, tokens, costCny: Math\.round\(costCny \* 100\) \/ 100, hasUsage \};\s*count = 0;/.test(CLIENT_SOURCE),
+    /take\(\) \{\s*const out = \{\s*any,/.test(CLIENT_SOURCE) &&
+    /lastMessage = '';\s*return out;/.test(CLIENT_SOURCE),
     'take() 必须清零累计器',
   );
+});
+
+test('回来汇总＝一份任务总账：不数个数，排版与平时那条完成气泡同形', () => {
+  // 不再出现"完成了 N 个任务"这种计数
+  assert.ok(!CLIENT_SOURCE.includes("完成了 ' + sum.count"), '汇总不得再统计任务个数');
+  assert.ok(!/sum\.count/.test(CLIENT_SOURCE), 'count 字段应已彻底移除');
+  // 与宿主 taskSummaryLines 同形的五行/六行
+  for (const line of [
+    "const lines = ['用时 ' + fmtDuration(sum.durSec)];",
+    "lines.push('消耗 ' + fmtTokensCompact(sum.tokens) + ' tokens');",
+    "lines.push('花费 ' + fmtCost(sum.costCny));",
+    "lines.push('· 缓存命中 ' + fmtCost(sum.costHitCny));",
+    "lines.push('· 缓存未命中 ' + fmtCost(sum.costMissCny));",
+    "lines.push('· 输出 ' + fmtCost(sum.costOutCny));",
+  ]) {
+    assert.ok(CLIENT_SOURCE.includes(line), '汇总气泡缺少这一行：' + line);
+  }
+  // 花费明细跟随 costInBubble（与平时那条气泡同一个开关）
+  assert.ok(CLIENT_SOURCE.includes('summaryLines(sum, settingOn(s, \'costInBubble\'))'), '花费明细必须跟随 costInBubble');
+  // 标题与平时完成气泡一致
+  assert.ok(CLIENT_SOURCE.includes("title: '任务完成啦！'"), '汇总气泡标题应与平时一致');
+  // 期间只有后台任务/子代理（没有数值）时，退回最后那条原文，而不是显示"用时 0秒"
+  assert.ok(CLIENT_SOURCE.includes('if (sum.durSec <= 0 && !sum.hasUsage) {'), '必须有无数值时的回退分支');
+  assert.ok(CLIENT_SOURCE.includes('const text = sum.lastMessage || \'\';'), '回退分支要用最后那条的原文');
+});
+
+test('宿主把三桶一起带上：汇总才可能复刻平时那条气泡', () => {
+  for (const line of [
+    'if (item.costHitCny !== undefined) entry.costHitCny = item.costHitCny;',
+    'if (item.costMissCny !== undefined) entry.costMissCny = item.costMissCny;',
+    'if (item.costOutCny !== undefined) entry.costOutCny = item.costOutCny;',
+  ]) {
+    assert.ok(HOST_SOURCE.includes(line), 'push 白名单缺少：' + line);
+  }
+  assert.ok(HOST_SOURCE.includes('summary.costHitCny = usage.costHitCny;'), 'done 必须带上 costHitCny');
+  assert.ok(HOST_SOURCE.includes('summary.costMissCny = usage.costMissCny;'), 'done 必须带上 costMissCny');
+  assert.ok(HOST_SOURCE.includes('summary.costOutCny = usage.costOutCny;'), 'done 必须带上 costOutCny');
 });
 
 test('标签页角标：标题要和 DSH 抢写，且必须能还原', () => {
