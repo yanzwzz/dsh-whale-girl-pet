@@ -166,6 +166,24 @@ test('自定义提示音：上传 → 解码 → 播放，失败回退合成音'
   assert.ok(CLIENT_SOURCE.includes('const [soundState, setSoundState] = useState(() => customSound.state());'), '上传/清除后必须重渲染');
 });
 
+test('合成提示音是四个音的短句：成功逐音升高、失败逐音降低', () => {
+  const okBlock = CLIENT_SOURCE.match(/const NOTES_OK = \[([\s\S]*?)\];/);
+  const failBlock = CLIENT_SOURCE.match(/const NOTES_FAIL = \[([\s\S]*?)\];/);
+  assert.ok(okBlock && failBlock, '必须能定位两张音符表');
+  const freqs = (block) => [...block[1].matchAll(/\[\s*([\d.]+)\s*,/g)].map((m) => Number(m[1]));
+  const ok = freqs(okBlock);
+  const fail = freqs(failBlock);
+  assert.equal(ok.length, 4, '成功提示音必须是 4 个音');
+  assert.equal(fail.length, 4, '失败提示音必须是 4 个音');
+  for (let i = 1; i < ok.length; i += 1) assert.ok(ok[i] > ok[i - 1], '成功音必须一个比一个高');
+  for (let i = 1; i < fail.length; i += 1) assert.ok(fail[i] < fail[i - 1], '失败音必须一个比一个低');
+  // 播放必须遍历音符表，而不是又写死两声
+  assert.ok(
+    CLIENT_SOURCE.includes('for (const [freq, delay, dur, peak] of (ok ? NOTES_OK : NOTES_FAIL))'),
+    '播放必须遍历四音表',
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 3. 设置面板：分组 + 不漏开关
 // ---------------------------------------------------------------------------
