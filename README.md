@@ -214,7 +214,7 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 - **新增：任务完成提示三件套 + 设置面板分组**（只在标签页处于后台时提醒，前台时不打扰）。
   - **标签页角标**：后台完成时给 favicon 叠红点数字、标题加 `(N) ` 计数，回到该标签页即自动清掉。DSH 的 `DocumentTitle` 会在会话标题/面板变化时整体重写 `document.title`，所以这里挂 `MutationObserver` 把外部写入记成新基线、再把计数补回去；favicon 是把 `link[rel~="icon"]` 的 href 换成 canvas 合成的角标图，原 href 先存下来供还原（DSH 有明暗两个 SVG，逐个替换）。
   - **回来汇总气泡**：后台完成的任务先累计，回到前台时用宠物气泡一次交代「完成了 N 个任务 / 共 x分y秒 / 消耗 … tokens / 花费 ¥…」。用时与花费取自宿主随 `done` 事件新增的 `durSec` / `tokens` / `costCny` 字段（与气泡共用同一次 `computeTaskUsage`），不解析气泡里的中文文本；后台任务、子代理那几条没有这些字段，只计数量。
-  - **提示音**：WebAudio 现场合成（成功上行两音、失败下行两音），**不引入任何音频素材**。自动播放策略要求先解锁，代码在第一次 `pointerdown` / `keydown` / `touchstart` 时创建并 `resume()` 一次 `AudioContext`，拿不到就静默跳过；默认音量 0.25，设置里可调可关。
+  - **提示音**：默认 WebAudio 现场合成（成功上行两音、失败下行两音），**不引入任何音频素材**。自动播放策略要求先解锁，代码在第一次 `pointerdown` / `keydown` / `touchstart` 时创建并 `resume()` 一次 `AudioContext`，拿不到就静默跳过。音量按 **0–100** 走（默认 25，0 等于静音）。**响铃时机可选**：「每个任务完成」逐个响，或「全部完成后」只在当前没有别的任务在跑时响一声（判定依据是宿主每次轮询现算的 `running`，所以子代理、后台任务陆续结束时不打扰）。**支持自定义提示音**：设置面板里可直接选一个本地音频（≤1MB），客户端 `decodeAudioData` 解码后与合成音共用同一个 `AudioContext` 与音量增益；文件存 localStorage（只对本机浏览器生效），格式解不出来会回滚并回退到合成音，不会出现"设了却没声音"。
   - **为什么多标签页不会重复响**：三个提示都由"抢到那条 `done` 的标签页"负责，而宿主的事件队列是读走即清空的（`/api/whale-pet/state` 里 `queue.splice(0, queue.length)`），同一条完成事件只会有一个标签页收到。
   - **设置面板重整**：原来 17 行平铺，现在分「完成提醒 / 定时与关怀 / 宠物与外观 / 费用与看板」四页，新增三个开关与音量。
   - 测试：新增 `test/notify.test.mjs`（9 项），含一条强不变式——`Config` 里每个可写字段都必须能在设置面板里找到（`size` / `position` 由 DSH 原生表单负责，豁免），避免"加了配置却忘了给开关"。`test/host-routes.test.mjs` 的接线断言随"`computeTaskUsage` 只算一次、同时喂给气泡与结构化摘要"而更新。

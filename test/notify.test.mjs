@@ -25,12 +25,13 @@ const CLIENT_SOURCE = readFileSync(fileURLToPath(new URL('../lib/client.js', imp
 // ---------------------------------------------------------------------------
 // 1. 宿主侧：配置字段 + 结构化完成事件
 // ---------------------------------------------------------------------------
-test('宿主配置：四个提示开关都必须是 volatile（否则不进设置表单、也写不回）', () => {
+test('宿主配置：提示相关字段都必须是 volatile（否则不进设置表单、也写不回）', () => {
   for (const line of [
     'notifyBadge: Schema.boolean().default(true).volatile(),',
     'notifySummary: Schema.boolean().default(true).volatile(),',
     'notifySound: Schema.boolean().default(true).volatile(),',
-    'notifySoundVolume: Schema.number().min(0).max(1).default(0.25).volatile(),',
+    'notifySoundVolume: Schema.number().min(0).max(100).default(25).volatile(),',
+    "notifySoundMode: Schema.string().default('each').volatile(),",
   ]) {
     assert.ok(HOST_SOURCE.includes(line), 'Config 里缺少：' + line);
   }
@@ -67,16 +68,29 @@ test('只在后台提示：前台时直接返回，且三个动作各自受开�
   assert.ok(CLIENT_SOURCE.includes("if (settingOn(s, 'notifyBadge')) tabBadge.bump();"), '角标必须接 notifyBadge');
   assert.ok(CLIENT_SOURCE.includes("if (settingOn(s, 'notifySummary')) doneSummary.add(item);"), '汇总必须接 notifySummary');
   assert.ok(CLIENT_SOURCE.includes("if (settingOn(s, 'notifySound')) {"), '提示音必须接 notifySound');
-  // 音量缺省与宿主 schema 默认一致
+  // 音量口径：设置里是 0..100，播放前才换算成 0..1
   assert.ok(
-    CLIENT_SOURCE.includes("Number.isFinite(s.notifySoundVolume) ? s.notifySoundVolume : 0.25"),
-    '音量缺省应为 0.25（与宿主 default 一致）',
+    CLIENT_SOURCE.includes('const pct = Math.max(0, Math.min(100, Number.isFinite(s.notifySoundVolume) ? s.notifySoundVolume : 25));'),
+    '音量必须按 0..100 读取并夹紧（缺省 25）',
   );
-  // 接线点必须在 done 分支里
+  assert.ok(CLIENT_SOURCE.includes('playChime(item.ok !== false, pct / 100);'), '播放前必须换算成 0..1');
+  // 接线点必须在 done 分支里，并把权威 running 一起带进去（'all' 模式靠它）
   assert.ok(
-    CLIENT_SOURCE.includes("else if (item.type === 'done') { playNotice(item.ok, item); onTaskDone(item); }"),
-    'done 事件必须同时驱动动画/气泡与提示三件套',
+    CLIENT_SOURCE.includes("else if (item.type === 'done') { playNotice(item.ok, item); onTaskDone(item, data.running === true); }"),
+    'done 事件必须同时驱动动画/气泡与提示三件套，并带上 running',
   );
+});
+
+test('响铃时机：每个都响 / 全部完成后才响（可切换）', () => {
+  assert.ok(
+    CLIENT_SOURCE.includes("if ((s.notifySoundMode === 'all' ? 'all' : 'each') === 'all' && runningNow) return;"),
+    'all 模式必须在"还有任务在跑"时不响',
+  );
+  assert.ok(CLIENT_SOURCE.includes("['each', '每个任务完成'], ['all', '全部完成后']"), '设置面板必须给出两种时机');
+  assert.ok(CLIENT_SOURCE.includes("path: ['notifySoundMode']"), '切换必须写回 notifySoundMode');
+  // 判定依据必须是宿主同一次响应里现算的 running，而不是本地猜测
+  assert.ok(CLIENT_SOURCE.includes('data.running === true'), 'all 模式必须以宿主返回的 running 为准');
+  assert.ok(HOST_SOURCE.includes('running: anyAgentRunning(ctx)'), '宿主必须在 state 响应里带上 running');
 });
 
 test('回来汇总：无论开关如何都要 take() 一次，避免后台累计永远攒着', () => {
@@ -117,13 +131,13 @@ test('标签页角标：标题要和 DSH 抢写，且必须能还原', () => {
   );
 });
 
-test('提示音：WebAudio 合成，不引入音频素材，音量夹在 0..1', () => {
+test('提示音：合成音 + 自定义音频共用 AudioContext，不引入打包素材', () => {
   assert.ok(CLIENT_SOURCE.includes('window.AudioContext || window.webkitAudioContext'), '必须用 WebAudio');
-  assert.ok(CLIENT_SOURCE.includes('audio.createOscillator()'), '音源必须是现场合成的振荡器');
+  assert.ok(CLIENT_SOURCE.includes('audio.createOscillator()'), '内置音必须是现场合成的振荡器');
   // 不能悄悄依赖音频文件：本包 assets/ 里只有 webm/gif/png
-  assert.ok(!/new Audio\(/.test(CLIENT_SOURCE), '不得改用 <audio> 素材（那要新增二进制文件）');
+  assert.ok(!/new Audio\(/.test(CLIENT_SOURCE), '不得改用 <audio> 元素');
   assert.ok(!/\.(mp3|wav|ogg)['"]/.test(CLIENT_SOURCE), '不得引用 mp3/wav/ogg 素材');
-  // 夹紧：schema 上界是 1，越界会导致保存被拒
+  // 夹紧：schema 上界是 100，播放侧一律 0..1
   assert.ok(
     CLIENT_SOURCE.includes('const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0.25));'),
     '音量必须夹到 0..1',
@@ -131,6 +145,25 @@ test('提示音：WebAudio 合成，不引入音频素材，音量夹在 0..1', 
   assert.ok(CLIENT_SOURCE.includes('if (v <= 0) return false;'), '音量为 0 时不发声');
   // 自动播放策略：第一次用户手势里解锁
   assert.ok(CLIENT_SOURCE.includes("window.addEventListener('pointerdown', unlockAudio, true);"), '必须在用户手势里解锁音频');
+});
+
+test('自定义提示音：上传 → 解码 → 播放，失败回退合成音', () => {
+  assert.ok(CLIENT_SOURCE.includes("const KEY = 'whalePet.customSound';"), '自定义音频必须持久化（localStorage）');
+  assert.ok(CLIENT_SOURCE.includes('reader.readAsDataURL(file)'), '必须用 FileReader 读取用户文件');
+  assert.ok(CLIENT_SOURCE.includes('audio.decodeAudioData('), '必须解码成 AudioBuffer 才能复用音量增益');
+  assert.ok(CLIENT_SOURCE.includes('audio.createBufferSource()'), '自定义音频必须用 BufferSource 播放');
+  assert.ok(CLIENT_SOURCE.includes('const MAX_BYTES = 1024 * 1024;'), '必须有体积上限（localStorage 会膨胀 1/3）');
+  assert.ok(CLIENT_SOURCE.includes("info = previous;"), '解不出来时必须回滚，不能留下一个"设了却没声音"的配置');
+  // 回退链：自定义播不了就回到合成音
+  assert.ok(
+    /function playChime\(ok, volume\) \{\s*if \(customSound\.play\(volume\)\) return;\s*chime\.play\(ok, volume\);/.test(CLIENT_SOURCE),
+    'playChime 必须优先自定义音频、失败回退合成音',
+  );
+  // 设置面板入口：文件选择 + 试听 + 清除
+  assert.ok(CLIENT_SOURCE.includes("accept: 'audio/*'"), '设置面板必须给出音频文件入口');
+  assert.ok(CLIENT_SOURCE.includes("}, '试听'),"), '必须有试听按钮');
+  assert.ok(CLIENT_SOURCE.includes('}, \'清除\') : null),'), '必须有清除按钮（回到内置合成音）');
+  assert.ok(CLIENT_SOURCE.includes('const [soundState, setSoundState] = useState(() => customSound.state());'), '上传/清除后必须重渲染');
 });
 
 // ---------------------------------------------------------------------------
@@ -141,7 +174,7 @@ test('设置面板：四个分页 + 新开关可见 + 每个配置项都能在�
     assert.ok(CLIENT_SOURCE.includes(entry), '设置面板缺少分页：' + entry);
   }
   assert.ok(CLIENT_SOURCE.includes("const [tab, setTab] = useState('notify');"), '默认必须落在完成提醒页');
-  for (const key of ['notifySound', 'notifySoundVolume', 'notifyBadge', 'notifySummary']) {
+  for (const key of ['notifySound', 'notifySoundVolume', 'notifySoundMode', 'notifyBadge', 'notifySummary']) {
     assert.ok(CLIENT_SOURCE.includes("'" + key + "'"), '设置面板里找不到开关：' + key);
   }
   // 强不变式：Config 里每个可写字段都必须在面板出现（size/position 由 DSH 原生表单负责，豁免）
