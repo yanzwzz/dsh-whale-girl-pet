@@ -57,7 +57,7 @@ function makeCtx(options = {}) {
       if (name === 'credentials') return options.credentials;
       if (name === 'timer') return { interval: () => () => {}, timeout: () => () => {} };
       if (name === 'agents') return { list: () => [], roots: () => [] };
-      if (name === 'sessions') return undefined;
+      if (name === 'sessions') return options.sessions;
       if (name === 'sessionPersistence') return undefined;
       return undefined;
     },
@@ -225,5 +225,67 @@ test('费用显示开关：气泡的花费行必须是配置驱动的（接线�
   assert.ok(
     /summary\.costCny = usage\.costCny/.test(source),
     '回来汇总用的 costCny 必须来自同一次 computeTaskUsage',
+  );
+});
+
+/**
+ * 真端到端（不是字符串断言）：喂一条 agent/status 事件流，再打 state 路由，
+ * 检查队列里那条 done 到底带了哪些字段。
+ *
+ * 【为什么必须有这层】push() 是**白名单拷贝**：新增字段忘记登记就会被静默丢掉，
+ * 而客户端「回来汇总」正是靠这些字段才能报出与平时气泡同形的总账 —— 这类缺陷
+ * 单测和字符串断言都发现不了。
+ */
+test('端到端：agent 收工后 state 里的 done 必须带齐六个数值字段', async () => {
+  // 【时间戳必须晚于 runningSince】foldTodayUsage 只统计 time >= 开局时刻的事件，
+  // 所以事件时间要在 snapshotEvents() 被调用时现取（Date.now()），不能提前算好 ——
+  // 提前取值会卡在"同一毫秒才通过"的 flaky 边界上。
+  const session = {
+    snapshotEvents: () => {
+      const at = Date.now();
+      return [
+        { type: 'request/context', data: { model: 'deepseek-v4-flash' }, time: at },
+        {
+          type: 'assistant/message',
+          time: at,
+          data: {
+            turn: 1,
+            step: 1,
+            usage: { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          },
+        },
+      ];
+    },
+  };
+  const h = makeCtx({ sessions: { list: () => [session] } });
+  apply(h.ctx, h.ctx.fiber.config);
+  const emit = (payload) => {
+    for (const { event, handler } of h.listeners) if (event === 'agent/status') handler(payload);
+  };
+
+  emit({ status: 'running' });
+  emit({ status: 'idle' });
+  const first = await hit(h.routes, '/api/whale-pet/state');
+  const done = first.json.items.find((item) => item.type === 'done');
+  assert.ok(done !== undefined, '收工后队列里必须有一条 done');
+  assert.equal(typeof done.durSec, 'number', 'done 必须带 durSec');
+  for (const key of ['tokens', 'costCny', 'costHitCny', 'costMissCny', 'costOutCny']) {
+    assert.equal(typeof done[key], 'number', 'done 缺少数值字段：' + key);
+  }
+  assert.equal(done.tokens, 2_000_000, 'tokens 应为未命中输入 + 输出');
+  const buckets = Math.round((done.costHitCny + done.costMissCny + done.costOutCny) * 100) / 100;
+  assert.equal(buckets, done.costCny, '三桶之和必须等于总额（否则汇总气泡的明细自相矛盾）');
+  assert.ok(done.costCny > 0, '有用量就必须算出金额');
+
+  // 同一次响应的 running 必须为 false：客户端的"只在最后一拍提示"就靠这个事实
+  assert.equal(first.json.running, false, '收工后 running 必须为 false（三种提示的闸门依据）');
+
+  // 紧接着再来一次 idle：4 秒冷却内不得再入队 done（避免刷屏）
+  emit({ status: 'idle' });
+  const second = await hit(h.routes, '/api/whale-pet/state');
+  assert.equal(
+    second.json.items.filter((item) => item.type === 'done').length,
+    0,
+    '4 秒冷却内不应重复入队 done',
   );
 });
