@@ -95,7 +95,18 @@ test('三种提示都只在"全部完成后"那一拍出现（不给"每个都�
   }
   // 判定依据必须是宿主同一次响应里现算的 running，而不是本地猜测
   assert.ok(CLIENT_SOURCE.includes('data.running === true'), '必须以宿主返回的 running 为准');
-  assert.ok(HOST_SOURCE.includes('running: anyAgentRunning(ctx)'), '宿主必须在 state 响应里带上 running');
+  assert.ok(
+    HOST_SOURCE.includes('const running = anyAgentRunning(ctx);') &&
+    HOST_SOURCE.includes('{ items, settings: resolveConfig(), running }'),
+    '宿主必须在 state 响应里带上注册表现算的 running',
+  );
+  // 批次判定不得再挂在 agent/status 边沿上：DSH 对**每个** agent 都发那个事件
+  // （payload 是 { agent, status }），子代理收工会把这一批提前结束，
+  // 导致真正收尾时算不出用时/花费。
+  assert.ok(
+    !/ctx\.on\('agent\/status'/.test(HOST_SOURCE),
+    '批次判定不得再依赖 agent/status 边沿（子代理也会发，会提前结束这一批）',
+  );
   // 选项本身必须彻底移除：宿主 schema、客户端、设置面板都不该再有它
   assert.ok(!HOST_SOURCE.includes('notifySoundMode'), '宿主 Config 不得再声明 notifySoundMode');
   assert.ok(!CLIENT_SOURCE.includes('notifySoundMode'), '客户端不得再读 notifySoundMode');

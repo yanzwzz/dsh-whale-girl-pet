@@ -56,7 +56,7 @@ function makeCtx(options = {}) {
     get: (name) => {
       if (name === 'credentials') return options.credentials;
       if (name === 'timer') return { interval: () => () => {}, timeout: () => () => {} };
-      if (name === 'agents') return { list: () => [], roots: () => [] };
+      if (name === 'agents') return options.agents !== undefined ? options.agents : { list: () => [], roots: () => [] };
       if (name === 'sessions') return options.sessions;
       if (name === 'sessionPersistence') return undefined;
       return undefined;
@@ -229,14 +229,17 @@ test('费用显示开关：气泡的花费行必须是配置驱动的（接线�
 });
 
 /**
- * 真端到端（不是字符串断言）：喂一条 agent/status 事件流，再打 state 路由，
- * 检查队列里那条 done 到底带了哪些字段。
+ * 真端到端（不是字符串断言）：驱动 agent 注册表 + 打 state 路由，检查队列里那条
+ * done 到底带了哪些字段。
  *
  * 【为什么必须有这层】push() 是**白名单拷贝**：新增字段忘记登记就会被静默丢掉，
  * 而客户端「回来汇总」正是靠这些字段才能报出与平时气泡同形的总账 —— 这类缺陷
  * 单测和字符串断言都发现不了。
+ *
+ * 【批次判定现在归路由】running 的上升沿记开局、下降沿算用量并推 done。所以这里
+ * 通过翻转 agents 桩的状态来驱动，而不是发 agent/status 事件。
  */
-test('端到端：agent 收工后 state 里的 done 必须带齐六个数值字段', async () => {
+test('端到端：最后一个 agent 收工后 state 里的 done 必须带齐六个数值字段', async () => {
   // 【时间戳必须晚于 runningSince】foldTodayUsage 只统计 time >= 开局时刻的事件，
   // 所以事件时间要在 snapshotEvents() 被调用时现取（Date.now()），不能提前算好 ——
   // 提前取值会卡在"同一毫秒才通过"的 flaky 边界上。
@@ -257,16 +260,23 @@ test('端到端：agent 收工后 state 里的 done 必须带齐六个数值字�
       ];
     },
   };
-  const h = makeCtx({ sessions: { list: () => [session] } });
+  const agents = [{ id: 'main', status: 'running' }];
+  const h = makeCtx({
+    sessions: { list: () => [session] },
+    agents: { list: () => agents.slice(), roots: () => [] },
+  });
   apply(h.ctx, h.ctx.fiber.config);
-  const emit = (payload) => {
-    for (const { event, handler } of h.listeners) if (event === 'agent/status') handler(payload);
-  };
 
-  emit({ status: 'running' });
-  emit({ status: 'idle' });
-  const first = await hit(h.routes, '/api/whale-pet/state');
-  const done = first.json.items.find((item) => item.type === 'done');
+  // 第一次轮询：有 agent 在跑 → 开窗口（并补记开局时刻）
+  const opened = await hit(h.routes, '/api/whale-pet/state');
+  assert.equal(opened.json.running, true, '在跑时必须报 running=true');
+  assert.equal(opened.json.items.filter((item) => item.type === 'done').length, 0, '开局不该有 done');
+
+  // 收工
+  agents[0].status = 'idle';
+  const closed = await hit(h.routes, '/api/whale-pet/state');
+  assert.equal(closed.json.running, false, '收工后 running 必须为 false（三种提示的闸门依据）');
+  const done = closed.json.items.find((item) => item.type === 'done');
   assert.ok(done !== undefined, '收工后队列里必须有一条 done');
   assert.equal(typeof done.durSec, 'number', 'done 必须带 durSec');
   for (const key of ['tokens', 'costCny', 'costHitCny', 'costMissCny', 'costOutCny']) {
@@ -276,16 +286,61 @@ test('端到端：agent 收工后 state 里的 done 必须带齐六个数值字�
   const buckets = Math.round((done.costHitCny + done.costMissCny + done.costOutCny) * 100) / 100;
   assert.equal(buckets, done.costCny, '三桶之和必须等于总额（否则汇总气泡的明细自相矛盾）');
   assert.ok(done.costCny > 0, '有用量就必须算出金额');
+  assert.ok(!done.message.includes('这一轮任务已经搞定啦'), '算得出用量时不得退回兜底文案');
 
-  // 同一次响应的 running 必须为 false：客户端的"只在最后一拍提示"就靠这个事实
-  assert.equal(first.json.running, false, '收工后 running 必须为 false（三种提示的闸门依据）');
+  // 再轮询一次：窗口已关，不得再重复推 done
+  const again = await hit(h.routes, '/api/whale-pet/state');
+  assert.equal(again.json.items.filter((item) => item.type === 'done').length, 0, '不得重复入队 done');
+});
 
-  // 紧接着再来一次 idle：4 秒冷却内不得再入队 done（避免刷屏）
-  emit({ status: 'idle' });
-  const second = await hit(h.routes, '/api/whale-pet/state');
+/**
+ * 回归：子代理收工**不得**结束这一批。
+ *
+ * 【真实故障】DSH 的 agent/status 对每个 agent 都发（payload 是 { agent, status }），
+ * 旧实现没过滤 agent —— 子代理一结束就把 runningSince 清零、还用掉 4 秒冷却，
+ * 于是主任务真正收尾时 taskSince 已是 0，气泡只剩「这一轮任务已经搞定啦～」，
+ * 既没用时也没花费（用户截图里的就是这样）。
+ */
+test('回归：中途有子代理收工，这一批结束时仍必须算出用量', async () => {
+  const session = {
+    snapshotEvents: () => {
+      const at = Date.now();
+      return [
+        { type: 'request/context', data: { model: 'deepseek-v4-flash' }, time: at },
+        {
+          type: 'assistant/message',
+          time: at,
+          data: {
+            turn: 1,
+            step: 1,
+            usage: { inputTokens: 500_000, outputTokens: 500_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          },
+        },
+      ];
+    },
+  };
+  const agents = [{ id: 'main', status: 'running' }, { id: 'sub', status: 'running' }];
+  const h = makeCtx({
+    sessions: { list: () => [session] },
+    agents: { list: () => agents.slice(), roots: () => [] },
+  });
+  apply(h.ctx, h.ctx.fiber.config);
+
+  await hit(h.routes, '/api/whale-pet/state');          // 开局
+  agents.splice(1, 1);                                  // 子代理收工，主 agent 还在跑
+  const mid = await hit(h.routes, '/api/whale-pet/state');
+  assert.equal(mid.json.running, true, '子代理收工后仍有人在跑');
   assert.equal(
-    second.json.items.filter((item) => item.type === 'done').length,
+    mid.json.items.filter((item) => item.type === 'done').length,
     0,
-    '4 秒冷却内不应重复入队 done',
+    '子代理收工不得推出 done（那会把这一批提前结束）',
   );
+
+  agents[0].status = 'idle';                            // 主 agent 收工
+  const end = await hit(h.routes, '/api/whale-pet/state');
+  const done = end.json.items.find((item) => item.type === 'done');
+  assert.ok(done !== undefined, '整批结束后必须有一条 done');
+  assert.equal(typeof done.tokens, 'number', '带子代理的这一批也必须算出 tokens');
+  assert.equal(typeof done.costCny, 'number', '带子代理的这一批也必须算出花费');
+  assert.ok(!done.message.includes('这一轮任务已经搞定啦'), '不得退回兜底文案');
 });
