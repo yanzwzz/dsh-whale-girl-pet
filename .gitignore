@@ -1,6 +1,8 @@
-﻿node_modules/
+node_modules/
 *.tgz
 *.raw
 *.log
 .DS_Store
 Thumbs.db
+# 本地侦察脚本（CDP 探针等），不属于插件功能，别被 git add -A 顺手提交
+.research/
