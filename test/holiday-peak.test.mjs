@@ -6,15 +6,17 @@
  *   isPeakNow（浏览器半侧拿不到宿主模块，只能镜像），决定看板底纹与文案。
  *   两份必须同规则，否则页面显示的高峰与实际计费不一致。
  *   浏览器侧的 isPeakNow 在 bundle factory 作用域内、外部无法 import，
- *   所以这里按 dashboard-layout.test.mjs 的既有办法：从 client.js 源码里
- *   抠出实现并求值，再与宿主逐时刻对拍。
+ *   所以从 client.js 源码里抠出实现，写成一个临时 ESM 模块后 import()，
+ *   再与宿主逐时刻对拍（不用 eval / new Function）。
  *
  * 运行：node --test（在插件根目录）
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { bucketsFromUsage, costOfBuckets, isPeakBeijing, rateAt } from '../lib/usage.js';
 
 const CLIENT_PATH = fileURLToPath(new URL('../lib/client.js', import.meta.url));
@@ -48,21 +50,25 @@ function clientIsPeakNowSource() {
 }
 
 /** 用给定的节假日表字面量 + client.js 的真实 isPeakNow 源码构造判定函数。 */
-function makeIsPeakAt(holidaysLiteral) {
+async function makeIsPeakAt(holidaysLiteral) {
   const source = [
-    `const CN_STATUTORY_HOLIDAYS = new Set([${holidaysLiteral}]);`,
+    `export const CN_STATUTORY_HOLIDAYS = new Set([${holidaysLiteral}]);`,
     clientIsPeakNowSource(),
-    'return (now) => {',
+    'export function isPeakAt(now) {',
     '  const original = Date.now;',
     '  Date.now = () => now;',
     '  try { return isPeakNow(); } finally { Date.now = original; }',
-    '};',
+    '}',
   ].join('\n');
-  return new Function(source)();
+  const dir = mkdtempSync(join(tmpdir(), 'wg-peak-'));
+  const file = join(dir, 'is-peak.mjs');
+  writeFileSync(file, `${source}\n`, 'utf8');
+  const mod = await import(pathToFileURL(file).href);
+  return mod.isPeakAt;
 }
 
 /** 用 client.js 真实源码 + 真实节假日表构造的判定函数，用于与宿主对拍。 */
-const clientIsPeak = makeIsPeakAt(clientArrayLiteral('CN_STATUTORY_HOLIDAYS'));
+const clientIsPeak = await makeIsPeakAt(clientArrayLiteral('CN_STATUTORY_HOLIDAYS'));
 
 /** 逐个日期取一天中的多个时刻，方便穷举对拍。 */
 function instantsBetween(fromIso, toIso) {
@@ -174,9 +180,9 @@ test('宿主 isPeakBeijing 与客户端 isPeakNow 逐时刻对拍（2026 全年 
   assert.deepEqual(mismatches, [], `两份实现出现分歧：${JSON.stringify(mismatches.slice(0, 10))}`);
 });
 
-test('对拍覆盖到节假日：分歧检测本身有效（故意注入错误应被发现）', () => {
+test('对拍覆盖到节假日：分歧检测本身有效（故意注入错误应被发现）', async () => {
   // 自检：把节假日表换成空表，"节假日整天低峰"的断言必须失败，证明对拍不是恒真。
-  const naive = makeIsPeakAt("''");
+  const naive = await makeIsPeakAt("''");
   const nationalDay = at('2026-10-01T10:00:00+08:00');
   assert.equal(isPeakBeijing(nationalDay), false, '宿主：国庆为低峰');
   assert.equal(naive(nationalDay), true, '无节假日表的实现会误判为高峰（证明对拍能发现分歧）');
