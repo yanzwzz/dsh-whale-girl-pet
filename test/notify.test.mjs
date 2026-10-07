@@ -281,8 +281,13 @@ test('设置面板：四个分页 + 新开关可见 + 每个配置项都能在�
   for (const key of ['notifySound', 'notifySoundVolume', 'notifyBadge', 'notifySummary']) {
     assert.ok(CLIENT_SOURCE.includes("'" + key + "'"), '设置面板里找不到开关：' + key);
   }
-  // 强不变式：Config 里每个可写字段都必须在面板出现（size/position 由 DSH 原生表单负责，豁免）
-  const exempt = new Set(['size', 'position']);
+  // 强不变式：Config 里每个可写字段都必须在面板出现。
+  // 【曾经豁免 size/position】理由是"由 DSH 原生表单负责"——但 0.2.x 的插件配置
+  // 已经改成"插件自己在 Plugins 页注册 plugins.bundle.config / plugins.row.config"，
+  // 没有任何"自动把 volatile 字段画成表单"的兜底渲染器，于是这两个字段掉进了夹缝：
+  // host 有值、镜像里有描述符、界面上没人画（issue #10）。现在尺寸/位置/角落都在
+  // 「宠物与外观」页里，豁免随之取消——以后再有"配了但没接线"的字段会立刻被这条挡住。
+  const exempt = new Set();
   const fields = [...HOST_SOURCE.matchAll(/^\s{2}(\w+): Schema\./gm)].map((m) => m[1]);
   assert.ok(fields.length >= 15, 'Config 字段解析异常，只找到 ' + fields.length + ' 个');
   for (const field of fields) {

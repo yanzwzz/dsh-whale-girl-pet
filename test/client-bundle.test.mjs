@@ -6,7 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -355,4 +355,291 @@ test('镜像白名单：只有「螃蟹走路」朝右走时镜像，别的动�
   }
   // 三、白名单本身只该有螃蟹走路（想放行别的动画时必须同步改这条断言）
   assert.deepEqual(list, ['螃蟹走路'], '镜像白名单只应含螃蟹走路');
+});
+
+test('位置与大小：#10 —— 面板填数值 + 可视化编辑框（拖框 / 拖角 / 保存·取消）接线正确', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+
+  // 一、尺寸与位置不再从客户端 config 读（那条管线是空的 → 字段永远走默认值，
+  //     正是 issue #10 的"配了但不生效"），改由 usePetGeometry 订阅宿主设置。
+  assert.ok(source.includes('function usePetGeometry()'), '必须有 usePetGeometry 订阅尺寸/位置/角落');
+  assert.equal(source.includes('config && config.size'), false, '不得再从空的客户端 config 读尺寸');
+  assert.equal(source.includes('config && config.position'), false, '不得再从空的客户端 config 读角落');
+  for (const field of ["'size'", "'posX'", "'posY'", "'position'"]) {
+    assert.ok(source.includes(field), '设置面板必须能改字段 ' + field);
+  }
+
+  // 二、面板入口：「拖动调整位置与大小」必须先关掉设置弹窗再开启编辑会话
+  assert.ok(source.includes('function PetSettingsSection({ close })'), '设置面板必须接收 shell 给的 close');
+  assert.ok(source.includes('startPetEdit()'), '面板必须调用 startPetEdit 开启编辑会话');
+  assert.ok(source.includes("if (typeof close === 'function') close();"), '必须先收起设置弹窗（否则宠物被弹窗挡着没法拖）');
+  assert.ok(source.includes("'拖动调整位置与大小'"), '面板必须有可视化编辑入口');
+  assert.ok(source.includes("'恢复默认角落'"), '面板必须有恢复默认角落');
+  assert.ok(source.includes("op: 'unset'"), '恢复默认角落必须 unset 掉 posX/posY');
+
+  // 三、编辑框：尺寸跟 --dsh-pet-size（与舞台同值 → 框住的就是宠物本体）；
+  //     四角手柄 + 触屏手势约定与 video / 看板一致
+  const frame = /'\.dsh-pet-edit-frame\{([^}]*)\}'/.exec(source);
+  assert.ok(frame !== null, '必须有 .dsh-pet-edit-frame 规则');
+  assert.ok(frame[1].includes('var(--dsh-pet-size'), '编辑框尺寸必须跟 --dsh-pet-size 走');
+  assert.ok(frame[1].includes('touch-action:none'), '编辑框必须禁用浏览器手势，否则触屏拖不动');
+  for (const pos of ['nw', 'ne', 'sw', 'se']) {
+    assert.ok(source.includes('dsh-pet-edit-handle-' + pos), '缺少角手柄 ' + pos);
+  }
+  assert.ok(source.includes('petBoxFromDrag('), '拖框移动必须走 petBoxFromDrag（夹回视口）');
+  assert.ok(source.includes('petBoxFromResize('), '拖角缩放必须走 petBoxFromResize（对角固定 + 正方形）');
+  assert.ok(source.includes('setPointerCapture'), '编辑框拖动必须捕获指针');
+
+  // 四、保存 / 取消 / Esc 三个出口；保存失败不得退出编辑（草稿不能丢）
+  assert.ok(source.includes('const saveEditBox = async () => {'), '必须有保存处理');
+  assert.ok(source.includes('const cancelEditBox = () => {'), '必须有取消处理');
+  assert.ok(source.includes("e.key === 'Escape'"), 'Esc 必须取消编辑');
+  assert.ok(source.includes('if (!editing) return undefined;'), 'Esc 监听必须只在编辑期间绑定');
+  assert.ok(/if \(!ok\) \{[\s\S]{0,200}return;/.test(source), '保存失败必须留在编辑模式（草稿不丢）');
+  assert.ok(source.includes("{ op: 'set', path: ['posX']"), '保存必须写入 posX');
+  assert.ok(source.includes("{ op: 'set', path: ['posY']"), '保存必须写入 posY');
+  assert.ok(source.includes("{ op: 'set', path: ['size']"), '保存必须写入 size');
+
+  // 四之二、工具条两个按钮必须是**文字**，而且文字必须写在 props.children 里。
+  // 【为什么专门断言这个】h 是 react/jsx-runtime 的 jsx()，第三个参数是 key 而不是
+  // children：写成 h('button', {...}, '保存') 时文字会被当成 key 丢掉 —— 真机表现是
+  // "两个空白按钮"（先误判成字形缺失，改成文字后依旧空白，才定位到这里）。
+  assert.ok(source.includes("children: editSaving ? '保存中…' : '保存',"), '保存按钮的文字必须在 props.children 里');
+  assert.ok(source.includes("children: '取消',"), '取消按钮的文字必须在 props.children 里');
+  assert.ok(source.includes('const EDIT_BAR_STYLE = {'), '工具条必须有内联样式常量');
+  assert.ok(source.includes('EDIT_BTN_STYLE'), '按钮必须有内联样式兜底（背景/颜色不依赖注入的 CSS）');
+  assert.ok(source.includes('style: Object.assign({}, EDIT_BTN_STYLE, EDIT_BTN_OK_STYLE)'), '保存按钮必须用高亮内联样式');
+
+  // 五、编辑期间：宠物不乱跑、不抢自身拖拽/点击，按钮组收起
+  //     （守卫与 hidden 共用同一行，见下面「隐藏宠物」那条测试）
+  assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return false;'), '编辑期间不得漫游（tryMove 直接返回 false）');
+  assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return;'), '编辑期间宠物体不响应自身拖拽/点击');
+  assert.ok(source.includes('编辑位置/大小时收起按钮组'), '编辑时必须收起 ☁️💰🍪📊 按钮组与气泡');
+
+  // 六、面板预填用实测外框：角落模式下也能看到"现在到底在哪"（并可一键取回）
+  assert.ok(source.includes('function publishPetGeometry('), '必须有实测几何的发布函数');
+  assert.ok(source.includes('publishMeasuredGeometry()'), '每次渲染后与轮询里都要发布实测外框');
+  assert.ok(source.includes('petGeometry.current'), '面板必须能读到实测外框');
+  assert.ok(source.includes("'取当前位置'"), '面板必须有「取当前位置」');
+});
+
+test('jsx 运行时：h() 的 children 必须写在 props 里，不得用第三个参数', () => {
+  const raw = readFileSync(CLIENT_PATH, 'utf8');
+  // 先把注释剥掉（注释里举了这个反例，不剥会把注释本身当成违规代码；
+  // 剥法保留换行，所以报出来的行号仍是真实行号）。
+  const source = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  // h 是 react/jsx-runtime 的 jsx()：签名 jsx(type, props, key)。
+  // 第三个参数是 **key**，不是 children —— 写成 h('button', {...}, '保存') 时
+  // "保存"会被当成 key 丢掉，元素渲染出来是空的（真机上就是"两个空白按钮"）。
+  // 已有的测试都用桩 react（jsx 直接返回 {}），根本看不出这种问题，所以这里扫源码：
+  // 逐个 h( 调用数它顶层实参的逗号个数，≥2 即三个实参 → 报错并指出行号。
+  assert.ok(raw.includes("let { jsx: h } = require('react/jsx-runtime')"), 'h 必须来自 jsx 运行时（本不变式的前提）');
+  const offenders = [];
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] !== 'h' || source[i + 1] !== '(') continue;
+    const prev = source[i - 1];
+    if (prev !== undefined && /[\w$.]/.test(prev)) continue; // push( / .h( 之类
+    let depth = 0;
+    let commas = 0;
+    let quote = null;
+    let j = i + 1;
+    for (; j < source.length; j += 1) {
+      const ch = source[j];
+      if (quote !== null) {
+        if (ch === '\\') { j += 1; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+      if ('([{'.includes(ch)) depth += 1;
+      else if (')]}'.includes(ch)) { depth -= 1; if (depth === 0) break; }
+      else if (ch === ',' && depth === 1) commas += 1;
+    }
+    if (commas >= 2) offenders.push(source.slice(0, i).split('\n').length);
+  }
+  assert.deepEqual(offenders, [], 'h() 不得带第三个实参（那是 key，children 要写进 props）：第 ' + offenders.join('、') + ' 行');
+});
+
+test('☁️💰🍪📊 按钮组跟随宠物尺寸等比缩放', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  const stack = /'\.wb-stack\{([^}]*)\}'/.exec(source);
+  const right = /'\.wb-stack-right\{([^}]*)\}'/.exec(source);
+  const btn = /'\.wb-btn\{([^}]*)\}'/.exec(source);
+  assert.ok(stack !== null, '必须有 .wb-stack 规则');
+  assert.ok(right !== null, '必须有 .wb-stack-right 规则');
+  assert.ok(btn !== null, '必须有 .wb-btn 规则');
+
+  // 一、单位由 --dsh-pet-size 推出，按钮宽高都用它（写死 px 就不会跟着大小走）
+  assert.ok(stack[1].includes('--wb-unit:clamp('), '.wb-stack 必须定义 --wb-unit');
+  assert.ok(stack[1].includes('var(--dsh-pet-size'), '--wb-unit 必须由 --dsh-pet-size 推出');
+  assert.ok(btn[1].includes('width:var(--wb-unit)'), '按钮宽度必须用 --wb-unit');
+  assert.ok(btn[1].includes('height:var(--wb-unit)'), '按钮高度必须用 --wb-unit');
+  assert.equal(/width:\d+px/.test(btn[1]), false, '按钮不得再写死宽度（38px 就是比例不协调的根因）');
+
+  // 二、位置、间距、emoji 字号必须一起缩放：只缩按钮不缩间距会挤成一团
+  for (const prop of ['top:calc(var(--wb-unit)', 'left:calc(var(--wb-unit)', 'gap:calc(var(--wb-unit)']) {
+    assert.ok(stack[1].includes(prop), '.wb-stack 缺少随单位缩放的 ' + prop);
+  }
+  assert.ok(right[1].includes('right:calc(var(--wb-unit)'), '右侧摆放也必须跟着缩放');
+  // emoji 字号跟着缩放，但带一个可读下限（小尺寸下 5px 的图标等于看不见）
+  assert.ok(btn[1].includes('font-size:max(8px,calc(var(--wb-unit)'), 'emoji 字号必须跟着缩放并保留下限');
+  assert.ok(btn[1].includes('box-shadow:0 calc(var(--wb-unit)'), '投影也必须跟着缩放');
+
+  // 三、默认尺寸下必须与旧版逐像素一致：260 × 38/260 = 38px
+  const unit = /--wb-unit:clamp\((\d+)px,(.*),(\d+)px\)/.exec(stack[1]);
+  assert.ok(unit !== null, '--wb-unit 必须是 clamp(下限px, …, 上限px)');
+  const lower = Number(unit[1]);
+  const upper = Number(unit[3]);
+  const ratio = Number(/\*\s*([\d.]+)/.exec(unit[2])[1]);
+  assert.ok(Math.abs(260 * ratio - 38) < 0.5, '默认 260px 必须还原成原来的 38px，实际 ' + (260 * ratio).toFixed(2));
+  // 四、夹取：太小点不中、太大没必要（宠物体上限 400px）
+  assert.ok(lower >= 10 && lower <= 16, '下限应在 10..16px（可点中且不至于太抢眼），实际 ' + lower);
+  assert.ok(upper >= 48 && upper <= 80, '上限应在 48..80px，实际 ' + upper);
+});
+
+test('隐藏宠物（issue #10 第三点）：只收起本体，按钮与费用显示照旧', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+
+  // 一、本体隐藏 = class + CSS。必须用 opacity 而不是 display:none：
+  //     舞台盒子在位，旁边那组 ☁️💰🍪📊 按钮才不会跳位。
+  assert.ok(source.includes("' is-hidden is-peek-' + peekSide"), '根节点必须带 is-hidden 与贴边类');
+  const rule = /'\.dsh-pet-root\.is-hidden \.dsh-pet-stage\{([^}]*)\}'/.exec(source);
+  assert.ok(rule !== null, '必须有 .dsh-pet-root.is-hidden .dsh-pet-stage 规则');
+  assert.ok(rule[1].includes('opacity:0'), '隐藏必须用 opacity（display:none 会让按钮跳位）');
+  assert.equal(rule[1].includes('display:none'), false, '不得用 display:none 隐藏舞台');
+  assert.ok(rule[1].includes('pointer-events:none'), '隐藏后不得再吃掉鼠标事件（z-index 40 会挡住下面的界面）');
+
+  // 二、动画要真的停下来，而不是"看不见还在烧 CPU"；取消隐藏要接着播
+  assert.ok(source.includes('if (!hiddenRef.current) el.play()'), '隐藏时 switchTo 不得启动播放');
+  assert.ok(/if \(hidden\) \{[\s\S]{0,240}stopMove\(\)/.test(source), '隐藏时必须停掉正在进行的漫游');
+  assert.ok(source.includes('wasHiddenRef'), '取消隐藏时必须把前台缓冲重新播起来');
+
+  // 三、隐藏时不漫游 / 不响应点击；**通知气泡要保留**（贴边偷看时她就在屏幕边，
+  //     完成/失败/回来汇总、以及天气/余额/喂食的结果都要看得见），
+  //     只压掉"工作中的打字气泡"。
+  assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return false;'), '隐藏时不得漫游');
+  assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return;'), '隐藏时不得响应点击/拖拽/双击');
+  assert.equal(source.includes('if (hiddenRef.current) return;'), false, '隐藏时不得再掐掉气泡通道（通知气泡要保留）');
+  assert.ok(source.includes('!editing && bubble ?'), '隐藏时完成/结果气泡必须照常渲染');
+  assert.equal(source.includes('!editing && !hidden && bubble ?'), false, '通知气泡不得再被隐藏状态挡住');
+  assert.ok(source.includes('!editing && !hidden && typing && !bubble ?'), '隐藏时打字气泡仍不得渲染');
+
+  // 四、设置面板可达，且按钮组 / 两个费用 pill 不依赖宠物可见性
+  assert.ok(source.includes("'隐藏宠物'"), '设置面板必须有「隐藏宠物」开关');
+  assert.ok(source.includes("path: ['hidden']"), '开关必须写 hidden 字段');
+  assert.ok(source.includes("'conversation.composer.dock'") && source.includes("'conversation.chat.assistant-actions'"),
+    '两个费用 pill 必须照旧注册（它们是独立槽位组件，与宠物本体无关）');
+});
+
+test('隐藏后改为"贴浏览器边缘偷看"：素材合规且接线正确', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+
+  // 一、素材本身：必须存在、是真 PNG、带 alpha、竖构图（人物图）
+  const asset = fileURLToPath(new URL('../assets/thumb/peek-edge.png', import.meta.url));
+  assert.ok(existsSync(asset), '缺少素材 assets/thumb/peek-edge.png');
+  const bytes = readFileSync(asset);
+  assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', '必须是合法 PNG');
+  assert.equal(bytes[25], 6, '必须是带 alpha 的 PNG（colorType 6 = RGBA），否则墙/背景会一起显示出来');
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  assert.ok(width > 50 && height > 100 && height > width, '应是竖构图的人物图，实际 ' + width + 'x' + height);
+  assert.ok(bytes.length < 900 * 1024, '素材别太大（当前 ' + bytes.length + ' bytes）');
+
+  // 二、引用：走宿主既有的 /pet/thumb/ 路由（不新增路由），且只在隐藏时渲染
+  assert.ok(source.includes("const PEEK_ASSET = 'peek-edge.png'"), '必须声明素材名常量');
+  assert.ok(source.includes("src: '/pet/thumb/' + PEEK_ASSET"), '必须走既有的 /pet/thumb/ 路由');
+  assert.ok(source.includes("hidden ? h('img'"), '只在隐藏时渲染偷看图');
+  assert.ok(source.includes("path: ['hidden'], value: false"), '点她应当能叫她出来');
+
+  // 三、贴边定位：左右由 CSS 决定，右边界镜像；按钮组让到画面内侧
+  assert.ok(source.includes("const peekSide"), '必须计算贴哪一边');
+  assert.ok(source.includes("is-peek-' + peekSide"), '根节点必须带贴边类');
+  assert.ok(source.includes("'.dsh-pet-root.is-peek-left{left:0;right:auto;bottom:0;top:auto}'"), '左贴边规则');
+  assert.ok(source.includes("'.dsh-pet-root.is-peek-right{right:0;left:auto;bottom:0;top:auto}'"), '右贴边规则');
+  assert.ok(source.includes('is-peek-right .dsh-pet-peek{left:auto;right:0;transform:scaleX(-1)}'), '右贴边必须水平镜像');
+  assert.ok(source.includes('is-peek-left .wb-stack{left:calc(var(--dsh-pet-size,260px) * .445 + 4px)'), '按钮要让到画面内侧挨着她');
+  // 通知气泡必须**向画面内侧让开**：气泡宽 170-240px，而她贴边时头部中心只离边
+  // 尺寸×.2225（260px 时约 58px），居中等于一半气泡被屏幕边切掉（真机反馈"被遮挡"）。
+  assert.ok(source.includes('is-peek-left .dsh-pet-bubble{left:calc(var(--dsh-pet-size,260px) * .445 + 6px);--bubble-shift:0%}'), '左贴边时气泡要让到画面内侧');
+  assert.ok(source.includes('is-peek-right .dsh-pet-bubble{left:auto;right:calc(var(--dsh-pet-size,260px) * .445 + 6px);--bubble-shift:0%}'), '右贴边时气泡也要镜像让到内侧');
+  assert.equal(source.includes('dsh-pet-bubble{left:calc(var(--dsh-pet-size,260px) * .2225)}'), false, '不得再让气泡以头部中心居中（一半会跑出屏幕）');
+  // 隐藏时自定义坐标必须让位给 CSS（内联样式优先级高于类）
+  assert.ok(source.includes('const rootStyle = hidden'), '隐藏时根节点样式必须交给 CSS');
+  // 尺寸仍跟设置走（与按钮组同一套缩放口径）
+  assert.ok(source.includes('height:var(--dsh-pet-size,260px);width:calc(var(--dsh-pet-size,260px) * .445)'),
+    '偷看图尺寸必须跟 --dsh-pet-size 走');
+});
+
+test('拖到屏幕边缘自动隐藏：认出左边还是右边，并把角落一起记住', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+
+  // 一、阈值常量存在且在合理范围
+  const margin = /const EDGE_HIDE_MARGIN = (\d+);/.exec(source);
+  assert.ok(margin !== null, '必须有边缘判定阈值常量 EDGE_HIDE_MARGIN');
+  assert.ok(Number(margin[1]) >= 8 && Number(margin[1]) <= 60, '阈值应在 8..60px，实际 ' + margin[1]);
+
+  // 二、左右两侧分别判定，命中才动手
+  assert.ok(source.includes('const maybeHideAtEdge = (clientX, clientY) => {'), '必须有"拖到边缘"的处理函数（要同时拿到横纵坐标）');
+  assert.ok(source.includes('if (clientX <= EDGE_HIDE_MARGIN) side = '), '必须认出左边缘');
+  assert.ok(source.includes('else if (clientX >= vw - EDGE_HIDE_MARGIN) side = '), '必须认出右边缘');
+  assert.ok(source.includes('if (side === null) return;'), '没贴边不得乱动');
+  assert.ok(source.includes('maybeHideAtEdge(dropX, dropY)'), '拖拽收尾（松手处）必须调用它');
+
+  // 三、必须同时写 hidden / position / posY：三者都是持久化的，少写一个就会出现
+  //     "拖到左上角，重启后贴在右下角"（客户端只能靠这两个字段还原边与高度）
+  assert.ok(source.includes("{ op: 'set', path: ['hidden'], value: true }"), '贴边要写 hidden=true');
+  assert.ok(source.includes("value: side === 'left' ? 'bottom-left' : 'bottom-right'"), '必须把对应角落一起写对');
+  assert.ok(source.includes("{ op: 'set', path: ['posY'], value: clampPeekTop(clientY - size / 2, size, vh) }"), '必须把贴边高度一起记住');
+
+  // 四、贴哪一边优先看"她刚被拖到哪"，不能被旧角落设置覆盖
+  assert.ok(source.includes('if (customPos) return (customPos.rx * window.innerWidth)'), 'peekSide 必须优先用会话内的拖拽位置');
+  assert.ok(source.includes('if (!geometry.custom) return corner === '), '其次才是角落设置');
+
+  // 四之二、竖直方向也要跟随落点（不是永远贴底）
+  assert.ok(source.includes('function clampPeekTop(value, size, viewHeight)'), '必须有贴边竖直位置的夹取函数');
+  assert.ok(source.includes('const peekTop = !hidden'), '必须计算贴边时的竖直位置');
+  assert.ok(source.includes('customPos.ry * window.innerHeight'), '竖直位置必须优先用会话内的落点高度');
+  assert.ok(source.includes('geometry.hasPosY'), '设置里只写了 Y（贴边高度）时也要认');
+  assert.ok(source.includes("peekTop === null ? {} : { top: peekTop + 'px', bottom: 'auto' }"), '隐藏时竖直位置要写进内联样式（横向仍交给 CSS 类）');
+  assert.ok(source.includes("'.dsh-pet-root.is-peek-left{left:0;right:auto;bottom:0;top:auto}'"), '横向仍由贴边类负责');
+
+  // 五、反向操作：也能把她从边上**拖出来**（越过阈值即取消隐藏，并跟手移动）
+  const peekDrag = /const PEEK_DRAG_THRESHOLD = (\d+);/.exec(source);
+  assert.ok(peekDrag !== null, '必须有拖出阈值常量 PEEK_DRAG_THRESHOLD');
+  assert.ok(Number(peekDrag[1]) >= 2 && Number(peekDrag[1]) <= 20, '阈值应在 2..20px，实际 ' + peekDrag[1]);
+  assert.ok(source.includes('const handlePeekMove = (e) => {'), '偷看素材必须支持拖动');
+  assert.ok(source.includes("void postPetSettings([{ op: 'set', path: ['hidden'], value: false }]);"), '拖出来要取消隐藏');
+  assert.ok(source.includes('rx: clampRatio(e.clientX / window.innerWidth)'), '拖出来要先把落点记进会话位置（免得先闪回旧角落）');
+  assert.ok(source.includes('rootEl.style.left = clampPetX(e.clientX - size / 2, size, window.innerWidth)'), '拖动期间直写 DOM 时必须夹回视口');
+  assert.ok(source.includes('if (justDraggedRef.current) return;'), '拖完不得再触发一次"叫她出来"');
+  for (const binding of ['onPointerDown: handlePeekDown', 'onPointerMove: handlePeekMove', 'onPointerUp: handlePeekUp', 'onLostPointerCapture: handlePeekUp']) {
+    assert.ok(source.includes(binding), '素材上要挂 ' + binding);
+  }
+
+  // 五之二、拖动的两种意图要分开：**沿边上下拖只改高度（保持隐藏）**，
+  //         只有朝画面内侧横拖够远才"拽出来"。
+  const pullOut = /const PEEK_PULL_OUT_DISTANCE = (\d+);/.exec(source);
+  assert.ok(pullOut !== null, '必须有"拽出来"的横向阈值常量 PEEK_PULL_OUT_DISTANCE');
+  assert.ok(Number(pullOut[1]) >= 16 && Number(pullOut[1]) <= 120, '阈值应在 16..120px，实际 ' + pullOut[1]);
+  assert.ok(source.includes('const inward = g.side === \'left\' ? dx : -dx;'), '必须按贴边方向算"朝内"的分量');
+  assert.ok(source.includes('if (!g.out && inward >= PEEK_PULL_OUT_DISTANCE)'), '只有朝内拖够远才取消隐藏');
+  // 未拽出时只写 top（横向仍贴边），拽出后才写 left/top 跟手
+  assert.ok(source.includes('g.top = clampPeekTop(e.clientY - size / 2, size, window.innerHeight);'), '上下拖动只改高度');
+  assert.ok(/if \(g\.out\) \{[\s\S]{0,400}return;\s*\}\s*\/\/ 还没拽出来/.test(source),
+    '必须是"先判断拽出、否则只沿边上下"的结构（反过来会在上下拖动时被拽出来）');
+  // 松手时：拽出才提交指针落点；只上下拖则保持隐藏、把新高度写回设置
+  assert.ok(/if \(out\) \{[\s\S]{0,300}return;\s*\}[\s\S]{0,600}\{ op: 'set', path: \['posY'\], value: finalTop \}/.test(source),
+    '松手时只有"拽出"分支才提交指针位置；纯上下拖必须保持隐藏并写回高度');
+  assert.ok(source.includes('const peekIdle = { active: false, moved: false, out: false, sx: 0, sy: 0, side: \'right\', top: null };'),
+    '手势初始状态必须包含 out/side/top（自愈时整体复位）');
+
+  // 六、真机 bug 回归：指针在窗口外松开时 pointerup 会丢，手势状态一直挂着 →
+  //     鼠标**只是划过**（没有任何按键）也会被当成拖动，甚至把宠物拖到窗口外够不回来。
+  assert.ok(source.includes('function clampRatio(value)'), '必须有比例夹取函数');
+  assert.equal((source.match(/if \(e\.buttons === 0\)/g) || []).length >= 2, true,
+    '宠物本体与偷看素材的 pointermove 都必须用"没按键"自愈挂住的手势');
+  assert.ok(source.includes("forward('lostpointercapture', 'pointerup')"), 'video 收到失去捕获也要收尾');
+  assert.ok(source.includes('rootEl.style.left = clampPetX(e.clientX - size / 2, size, window.innerWidth)'), '本体拖拽也要夹回视口');
 });

@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 import { apply } from '../lib/index.js';
 
 const CLIENT_PATH = fileURLToPath(new URL('../lib/client.js', import.meta.url));
+const HOST_PATH = fileURLToPath(new URL('../lib/index.js', import.meta.url));
+const HOST_SOURCE = readFileSync(HOST_PATH, 'utf8');
 const PROJECTION_PATH = fileURLToPath(new URL('../lib/cost-projection.js', import.meta.url));
 
 /** 一份能装上插件的假 ctx：只实现 applyInner 真正用到的东西。 */
@@ -30,6 +32,7 @@ function makeCtx(options = {}) {
   const projections = [];
   const listeners = [];
   const warnings = [];
+  const mutations = []; // settings.mutate 的调用记录（issue #10：尺寸/位置写回的接线断言）
   const live = { config: Object.assign({ city: '济南', dashboardWindowDays: 7, dashboardHistory: false }, options.config) };
   const ctx = {
     fiber: { entry: { options: { id: 'pet' } }, config: live.config },
@@ -52,7 +55,7 @@ function makeCtx(options = {}) {
         return () => {};
       },
     },
-    settings: { writable: true, mutate: async () => {} },
+    settings: { writable: options.writable !== false, mutate: async (ns, ops) => { mutations.push({ ns, ops }); } },
     get: (name) => {
       if (name === 'credentials') return options.credentials;
       if (name === 'timer') return { interval: () => () => {}, timeout: () => () => {} };
@@ -62,24 +65,34 @@ function makeCtx(options = {}) {
       return undefined;
     },
   };
-  return { ctx, routes, projections, listeners, warnings };
+  return { ctx, routes, projections, listeners, warnings, mutations };
 }
 
 /** 打一条已注册的路由，返回 { status, json, text }。 */
-async function hit(routes, path, { method = 'GET', url = path } = {}) {
+async function hit(routes, path, { method = 'GET', url = path, body } = {}) {
   const route = routes.find((r) => r.path === path);
   assert.ok(route !== undefined, '路由未注册：' + path);
   let status = 0;
-  let body = '';
+  let body2 = '';
   const res = {
     writeHead: (code) => { status = code; return res; },
-    end: (chunk) => { body = chunk === undefined ? '' : String(chunk); return res; },
+    end: (chunk) => { body2 = chunk === undefined ? '' : String(chunk); return res; },
     setHeader: () => {}, write: () => true,
   };
-  await route.handler({ method, url, headers: {}, on: () => {} }, res);
+  // 请求体：readBody 走 req.on('data')/('end')，这里按需同步喂给它
+  const chunks = body === undefined ? [] : [String(body)];
+  const req = {
+    method, url, headers: {}, destroy: () => {},
+    on: (event, callback) => {
+      if (event === 'data') { for (const chunk of chunks) callback(chunk); }
+      else if (event === 'end') callback();
+      return req;
+    },
+  };
+  await route.handler(req, res);
   let json;
-  try { json = JSON.parse(body); } catch { json = undefined; }
-  return { status, json, text: body };
+  try { json = JSON.parse(body2); } catch { json = undefined; }
+  return { status, json, text: body2 };
 }
 
 /** 临时替换全局 fetch，跑完自动还原。 */
@@ -343,4 +356,65 @@ test('回归：中途有子代理收工，这一批结束时仍必须算出用�
   assert.equal(typeof done.tokens, 'number', '带子代理的这一批也必须算出 tokens');
   assert.equal(typeof done.costCny, 'number', '带子代理的这一批也必须算出花费');
   assert.ok(!done.message.includes('这一轮任务已经搞定啦'), '不得退回兜底文案');
+});
+
+// ---------------------------------------------------------------------------
+// issue #10：尺寸 / 位置（size / posX / posY）的读写链路
+// ---------------------------------------------------------------------------
+test('issue #10：schema 里 posX/posY 存在、无默认值且 volatile', () => {
+  for (const key of ['size', 'position', 'posX', 'posY']) {
+    assert.ok(new RegExp('^  ' + key + ': Schema\\.', 'm').test(HOST_SOURCE), 'Config 缺少字段 ' + key);
+  }
+  // 无默认值 = "未设置"语义：settings 的表单投影会略过它们，
+  // 客户端据此判定"跟随角落"还是"固定像素位置"（有默认值就永远进自定义模式了）。
+  assert.ok(/^  posX: Schema\.number\(\)\.volatile\(\),/m.test(HOST_SOURCE), 'posX 必须是无默认值的 volatile number');
+  assert.ok(/^  posY: Schema\.number\(\)\.volatile\(\),/m.test(HOST_SOURCE), 'posY 必须是无默认值的 volatile number');
+});
+
+test('issue #10 第三点：hidden 开关存在、默认 false（不隐藏）且 volatile', () => {
+  // 默认必须是 false：升级后没人愿意一觉醒来宠物不见了
+  assert.ok(/^  hidden: Schema\.boolean\(\)\.default\(false\)\.volatile\(\),/m.test(HOST_SOURCE),
+    'hidden 必须是 default(false) 的 volatile 布尔（即时生效、默认显示）');
+  // 它必须是"隐藏本体"而不是"关掉插件行"：插件行的开关会连费用 pill / 看板 / 设置面板一起干掉
+  assert.ok(HOST_SOURCE.includes("'/api/whale-pet/settings'"), '设置路由照旧（隐藏不影响任何路由）');
+});
+
+test('issue #10：设置路由把尺寸/位置的 set 与 unset 原样透传给 settings.mutate', async () => {
+  const h = makeCtx();
+  apply(h.ctx, h.ctx.fiber.config);
+
+  // 编辑框「保存」/ 面板「应用」：尺寸与位置一次性写入
+  const ops = [
+    { op: 'set', path: ['size'], value: 320 },
+    { op: 'set', path: ['posX'], value: 800 },
+    { op: 'set', path: ['posY'], value: 500 },
+  ];
+  const saved = await hit(h.routes, '/api/whale-pet/settings', { method: 'POST', body: JSON.stringify({ ops }) });
+  assert.equal(saved.status, 200, '保存必须 200');
+  assert.deepEqual(saved.json, { ok: true });
+  assert.equal(h.mutations.length, 1, '必须正好调用一次 mutate');
+  assert.equal(h.mutations[0].ns, 'pet', '必须按插件行的 entry id 寻址');
+  assert.deepEqual(h.mutations[0].ops, ops, '操作数组必须原样透传（不许改写路径或值）');
+
+  // 面板「恢复默认角落」：清掉像素位置 → 回到 position 角落
+  const resetOps = [{ op: 'unset', path: ['posX'] }, { op: 'unset', path: ['posY'] }];
+  const reset = await hit(h.routes, '/api/whale-pet/settings', { method: 'POST', body: JSON.stringify({ ops: resetOps }) });
+  assert.equal(reset.status, 200);
+  assert.deepEqual(h.mutations[1].ops, resetOps, 'unset 必须一并透传（否则清不掉像素位置）');
+});
+
+test('issue #10：设置读接口同时返回 value 与 writable（只读实例要能禁用几何控件）', async () => {
+  const h = makeCtx({ config: { size: 300, posX: 640, posY: 480 } });
+  apply(h.ctx, h.ctx.fiber.config);
+  const got = await hit(h.routes, '/api/whale-pet/settings');
+  assert.equal(got.status, 200);
+  assert.equal(got.json.value.size, 300, '尺寸必须回读得到');
+  assert.equal(got.json.value.posX, 640, 'X 必须回读得到');
+  assert.equal(got.json.value.posY, 480, 'Y 必须回读得到');
+  assert.equal(got.json.writable, true);
+
+  const readOnly = makeCtx({ writable: false });
+  apply(readOnly.ctx, readOnly.ctx.fiber.config);
+  const denied = await hit(readOnly.routes, '/api/whale-pet/settings');
+  assert.equal(denied.json.writable, false, '只读实例必须如实上报 writable=false');
 });
