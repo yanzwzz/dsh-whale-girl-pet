@@ -23,12 +23,20 @@
  *
  * 运行：
  *   cd D:\deepseek-harness
- *   node --import tsx/esm "D:\SRC\dsh work\dsh-whale-pet\scripts\verify-dsh-0.1.7.mjs"
+ *   node --import tsx/esm "<插件目录>/scripts/verify-dsh-0.1.7.mjs"
+ *
+ * 路径都不再写死：插件根目录由本脚本位置推出（scripts/ 的上一级），
+ * DSH 检出默认 D:/deepseek-harness、可用环境变量 DSH_CHECKOUT 覆盖。
  */
 import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const PET_ROOT = 'D:/SRC/dsh work/dsh-whale-pet'
-const SETTINGS_SRC = 'D:/deepseek-harness/packages/settings/settings/src/index.ts'
+/** 插件根目录（本脚本所在 scripts/ 的上一级）——换机器/换检出位置都不用改脚本。 */
+const PET_ROOT = fileURLToPath(new URL('..', import.meta.url))
+/** DSH 检出目录（默认 D:/deepseek-harness，可用 DSH_CHECKOUT 覆盖）。 */
+const DSH_ROOT = process.env.DSH_CHECKOUT || 'D:/deepseek-harness'
+const SETTINGS_SRC = join(DSH_ROOT, 'packages/settings/settings/src/index.ts')
 
 const failures = []
 const check = (label, condition, detail) => {
@@ -59,7 +67,7 @@ check('仍有 mutate() / update() / writable', typeof proto.mutate === 'function
 // 2. 用真实 API 形状的 ctx 跑 apply()
 // ---------------------------------------------------------------------------
 console.log('\n[2] pet.apply() 在 0.1.7 API 形状下能否正常激活')
-const pet = await import(pathToFileURL(`${PET_ROOT}/lib/index.js`).href)
+const pet = await import(pathToFileURL(join(PET_ROOT, 'lib/index.js')).href)
 
 const routes = []
 const events = new Map()

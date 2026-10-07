@@ -46,7 +46,10 @@ $files = @(
     'cordis.patch.yml',
     'package.json',
     'README.md',
-    'README.en.md'
+    'README.en.md',
+    # 隐藏宠物时贴边偷看的素材（issue #10 第三点）：它是 assets/thumb 下的**新文件**，
+    # 而 assets 目录只在"整个目录缺失"时才拷，所以必须在这里单独登记，否则副本里没有它。
+    'assets\thumb\peek-edge.png'
 )
 
 # 资源目录（动画）体积大，只在缺失时同步，避免每次无谓复制 26MB
