@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 
 const CLIENT_PATH = fileURLToPath(new URL('../lib/client.js', import.meta.url));
+const HOST_PATH = fileURLToPath(new URL('../lib/index.js', import.meta.url));
 
 /** 最小 react 替身：顶层只做定义，不真正渲染。 */
 const react = new Proxy({}, {
@@ -319,6 +320,76 @@ test('费用显示开关：五个显示位置各自受开关控制（与 dsh-cos
   assert.ok(lastHook > 0 && guard > lastHook, '开关的提前 return 必须排在所有 hook 之后（hook 数量不能随开关变化）');
 });
 
+test('显示开关：按钮组三态（左/右/关闭）与两个头顶气泡开关', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  const host = readFileSync(HOST_PATH, 'utf8');
+
+  // 一、宿主 schema：两个气泡开关默认 true（升级后行为不变），且必须是 volatile（否则写不回）
+  assert.ok(host.includes('bubbleNotice: Schema.boolean().default(true).volatile(),'), 'Config 缺少 bubbleNotice');
+  assert.ok(host.includes('bubbleWork: Schema.boolean().default(true).volatile(),'), 'Config 缺少 bubbleWork');
+  assert.ok(host.includes("buttonSide: Schema.string().default('left').volatile(),"), 'buttonSide 默认必须仍是 left');
+
+  // 二、三态归一：只认 left/right/off，写错的值退回 left（不能让按钮组凭空消失）
+  assert.ok(source.includes('function readDisplaySettings(settings)'), '必须有 displaySettings 归一函数');
+  assert.ok(source.includes("s.buttonSide === 'off'"), '必须识别 off 三态');
+
+  // 三、渲染：off 不渲染整组按钮；right 加右侧类名；两个气泡各自受自己的开关控制
+  assert.ok(source.includes("editing || displaySettings.buttonSide === 'off' ? null : react.createElement('div'"), 'off 时不得渲染按钮组');
+  assert.ok(source.includes("displaySettings.buttonSide === 'right' ? ' wb-stack-right'"), 'right 时仍要挂 wb-stack-right');
+  assert.ok(source.includes('displaySettings.bubbleNotice && bubble'), '提醒气泡渲染必须受 bubbleNotice 控制');
+  assert.ok(source.includes('displaySettings.bubbleWork && typing'), '工作输出气泡渲染必须受 bubbleWork 控制');
+
+  // 四、入口拦截：showBubble / startTyping 必须提前 return（只做渲染门会白跑定时器/存下过期状态）
+  assert.ok(source.includes("settingOn(settingsRef.current, 'bubbleNotice')) return;"), 'showBubble 入口必须拦 bubbleNotice');
+  assert.ok(source.includes("settingOn(settingsRef.current, 'bubbleWork')) return;"), 'startTyping 入口必须拦 bubbleWork');
+  // 读 ref 而不是 state：轮询 effect 的闭包是首次渲染的，state 会一直是旧值
+  assert.ok(source.includes('settingsRef.current = petSettings.current || {};'), '订阅快照时必须同步刷新 settingsRef');
+
+  // 五、开关必须能在设置面板里找到（否则用户没法关）
+  for (const label of [
+    '按钮组（☁️💰🍪📊）',
+    "['left', '左侧'], ['right', '右侧'], ['off', '关闭']",
+    '提醒气泡（完成 / 天气 / 余额 / 喂食）',
+    '工作输出气泡（干活时头顶打字）',
+  ]) {
+    assert.ok(source.includes(label), '设置面板缺少：' + label);
+  }
+});
+
+test('readDisplaySettings：三态归一 + 缺省按开（旧配置/写错值都不能让按钮组消失）', async () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  const start = source.indexOf('function readDisplaySettings(settings) {');
+  assert.notEqual(start, -1, 'client.js 里必须存在 readDisplaySettings');
+  // 花括号配平取出函数体（与 notify.test 里抠 fmtDuration 同一手法）
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') { depth -= 1; if (depth === 0) { end = i + 1; break; } }
+  }
+  assert.notEqual(end, -1, 'readDisplaySettings 花括号不配平');
+  // 抠出来的源码写成临时 ESM 模块再 import()：真的跑一遍归一逻辑
+  const dir = mkdtempSync(join(tmpdir(), 'wg-display-'));
+  const file = join(dir, 'display.mjs');
+  writeFileSync(file, `export ${source.slice(start, end)}\n`, 'utf8');
+  const mod = await import(pathToFileURL(file).href);
+  const read = mod.readDisplaySettings;
+
+  // 缺省（旧配置里没有这三个字段）= 左侧、两个气泡都开（升级后行为不变）
+  assert.deepEqual(read(undefined), { buttonSide: 'left', bubbleNotice: true, bubbleWork: true });
+  assert.deepEqual(read({}), { buttonSide: 'left', bubbleNotice: true, bubbleWork: true });
+  // 三态透传；写错的值退回 left（否则按钮组会凭空消失、用户找不到开回来的入口）
+  assert.equal(read({ buttonSide: 'right' }).buttonSide, 'right');
+  assert.equal(read({ buttonSide: 'off' }).buttonSide, 'off');
+  assert.equal(read({ buttonSide: 'bogus' }).buttonSide, 'left');
+  assert.equal(read({ buttonSide: null }).buttonSide, 'left');
+  // 只有显式 false 才算关
+  assert.equal(read({ bubbleNotice: false }).bubbleNotice, false);
+  assert.equal(read({ bubbleWork: false }).bubbleWork, false);
+  assert.equal(read({ bubbleNotice: 0 }).bubbleNotice, true, '0 不是 false，不得当成关闭');
+});
+
 test('镜像白名单：只有「螃蟹走路」朝右走时镜像，别的动画一律不镜像', async () => {
   const source = readFileSync(CLIENT_PATH, 'utf8');
   const code = source
@@ -522,9 +593,9 @@ test('隐藏宠物（issue #10 第三点）：只收起本体，按钮与费用�
   assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return false;'), '隐藏时不得漫游');
   assert.ok(source.includes('if (editorRef.current || hiddenRef.current) return;'), '隐藏时不得响应点击/拖拽/双击');
   assert.equal(source.includes('if (hiddenRef.current) return;'), false, '隐藏时不得再掐掉气泡通道（通知气泡要保留）');
-  assert.ok(source.includes('!editing && bubble ?'), '隐藏时完成/结果气泡必须照常渲染');
-  assert.equal(source.includes('!editing && !hidden && bubble ?'), false, '通知气泡不得再被隐藏状态挡住');
-  assert.ok(source.includes('!editing && !hidden && typing && !bubble ?'), '隐藏时打字气泡仍不得渲染');
+  assert.ok(source.includes('!editing && displaySettings.bubbleNotice && bubble ?'), '隐藏时完成/结果气泡必须照常渲染（只受提醒气泡开关控制）');
+  assert.equal(/!editing[^\n]*hidden[^\n]*&& bubble \?/.test(source), false, '通知气泡不得再被隐藏状态挡住');
+  assert.ok(source.includes('!editing && !hidden && displaySettings.bubbleWork && typing && !bubble ?'), '隐藏时打字气泡仍不得渲染');
 
   // 四、设置面板可达，且按钮组 / 两个费用 pill 不依赖宠物可见性
   assert.ok(source.includes("'隐藏宠物'"), '设置面板必须有「隐藏宠物」开关');

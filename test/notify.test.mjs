@@ -32,6 +32,9 @@ test('宿主配置：提示相关字段都必须是 volatile（否则不进设�
     'notifySound: Schema.boolean().default(true).volatile(),',
     'notifySoundVolume: Schema.number().min(0).max(100).default(60).volatile(),',
     'notifySoundVolume: Schema.number().min(0).max(100).default(60).volatile(),',
+    // 头顶气泡两个开关（默认开；关掉只影响显示）
+    'bubbleNotice: Schema.boolean().default(true).volatile(),',
+    'bubbleWork: Schema.boolean().default(true).volatile(),',
   ]) {
     assert.ok(HOST_SOURCE.includes(line), 'Config 里缺少：' + line);
   }

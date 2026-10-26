@@ -119,7 +119,7 @@ Auto-sleeps after 5 idle minutes (fall asleep → sleeping loop → woken up).
 - 8:00–10:00 groggy · 12:00 lunch box (once/day) · 23:00–3:00 dozing off
 
 ### ⚙️ Settings panel (DSH Settings → Pet Config)
-Pomodoro (interval adjustable) · late-night care · random chatter · **roam toggle** · **button side (left/right)** · **dashboard history backfill** · **dashboard window days** · long-task threshold · weather city. All live, persisted to `settings.yaml`.
+Pomodoro (interval adjustable) · late-night care · random chatter · **roam toggle** · **button group (left / right / off)** · **two bubble switches (notices / work output)** · **dashboard history backfill** · **dashboard window days** · long-task threshold · weather city. All live, persisted to `settings.yaml`.
 
 ### 🎨 46+ transparent animations
 All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank frames, unified ground alignment, `prefers-reduced-motion` friendly.
@@ -173,7 +173,9 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 | Late-night care | 23:00-05:00 reminder every 20 min | on |
 | Random chatter | Random DS memes | on |
 | Roam | Disable random wandering | on |
-| Button side | ☁️💰🍪📊 on left/right of pet | left |
+| Button group (☁️💰🍪📊) | Left / right of the pet, or **off** for the whole strip (the pet, cost pills, tab badge and chime keep working; flip it back on any time) | left |
+| Notice bubbles | Master switch for the bubbles above her head: completion/failure, welcome-back summary, weather/balance/feed results, pomodoro/late-night care/random chatter. Display only — animations, tab badge and chime are unaffected | on |
+| Work-output bubble | The typing bubble showing what the agent is doing while it works. Off = animation only; completion notices are unaffected | on |
 | Dashboard history backfill | Off = only count this run | on |
 | Dashboard window days | Days kept in the daily trend | 7 |
 | Long-task threshold | Warn after N minutes | 10 min |
@@ -186,7 +188,7 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 | Size | Pet size in px; type a number or drag the edit frame; the ☁️💰🍪📊 buttons scale with it (12–72px, still the original 38px at the default size) | 260 (40–400) |
 | Position X / Y | Pixel coordinates of the pet's **box top-left** from the viewport top-left; both filled = pinned position, empty / "reset to corner" = follow the corner below and stay responsive | unset (follows the corner) |
 | Default corner | Which corner to hug while no pinned position is set (bottom-right / bottom-left) | bottom-right |
-| Hide pet | Collapses the pet body and puts her **peeking from the browser edge** instead (`assets/thumb/peek-edge.png`; her size still follows the Size setting, and the edge follows the corner setting — with a pinned position the nearer edge wins). **Dragging her to the left/right screen edge also hides her into that peek** (the side is detected and **she stops at the height you released**, both remembered so a restart neither flips sides nor drops her back to the bottom). Playback pauses, no roaming, no click response, and **clicking her brings her back**; the ☁️💰🍪📊 buttons, cost pills, tab badge and chime keep working, and **notification bubbles keep appearing** (completion/failure, the welcome-back summary, and weather/balance/feed results all pop on the inner side — only the "working" typing bubble stays hidden) | shown |
+| Hide pet | Collapses the pet body and puts her **peeking from the browser edge** instead (`assets/thumb/peek-edge.png`; her size still follows the Size setting, and the edge follows the corner setting — with a pinned position the nearer edge wins). **Dragging her to the left/right screen edge also hides her into that peek** (the side is detected and **she stops at the height you released**, both remembered so a restart neither flips sides nor drops her back to the bottom). Playback pauses, no roaming, no click response, and **clicking her brings her back**; the ☁️💰🍪📊 buttons, cost pills, tab badge and chime keep working, and **notification bubbles keep appearing** (completion/failure, the welcome-back summary, and weather/balance/feed results all pop on the inner side — only the "working" typing bubble stays hidden; with the Notice bubbles switch off, none of them appear) | shown |
 
 > **Adjusting position and size** ([issue #10](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/10)): under "Pet Config → Pet & Appearance → Position & Size" you can type the numbers and hit **Apply**, or hit **Drag to adjust position & size** — the settings panel closes itself and a dashed edit frame appears around the pet: drag the frame to move, drag a corner to resize (square, opposite corner pinned), with a toolbar showing `size · X · Y` live. **Save** writes the settings (effective immediately, kept across refresh/restart); **Cancel** or **Esc** reverts. The toolbar buttons are plain **text** with inline styles — `✓`/`✗` are missing from some font stacks (the buttons would render blank), and inline styles keep the labels visible even if the injected CSS has not taken effect.
 >

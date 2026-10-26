@@ -152,6 +152,8 @@ const ctx = {
       roam: volatile(false),
       dashboardWindowDays: volatile(14),
       buttonSide: volatile('left'),
+      bubbleNotice: volatile(true),
+      bubbleWork: volatile(true),
     },
     entry: { options: { id: 'pet' } },
   },
