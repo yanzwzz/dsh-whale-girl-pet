@@ -215,6 +215,12 @@ See DSH Settings → "Pet Config" (all options live, written into the profile pa
 
 ## 📝 Changelog
 
+### 0.3.11
+- **🎛️ Three-state button group + two bubble switches (from [PR #15](https://github.com/yanzwzz/dsh-whale-girl-pet/pull/15), thanks @lengqiuqiuqiu)**: `buttonSide` grows from `left/right` to `left/right/off` (same field, existing configs keep working; invalid values normalise to `left`). With `off`, the whole ☁️💰🍪📊 stack is not rendered while the pet, cost pills, tab badge and chime keep working. The head bubble is split into **`bubbleNotice`** (completion/failure, welcome-back summary, weather/balance/feed results, pomodoro and the like) and **`bubbleWork`** (the typing work-output bubble), both default on. The three display switches now subscribe to the settings snapshot for immediate effect (no re-render when unchanged), collapse in-flight bubbles/dashboard on turn-off, and resume typing when turned back on while the agent is working.
+- **💰 Balance works with account sign-in too**: when no `DEEPSEEK_API_KEY` is configured (or the key fails with 401/network), `/api/whale-balance` falls back to the DSH-signed-in account's Platform wallets via `ctx.deepseekAccount.getBalance()` (topped-up + granted). A working key keeps the exact old behaviour; when neither path works the bubble mentions both.
+- **🔒 Host-route authentication (security fix)**: every route (`/api/whale-*`, `/api/whale-balance`, `/pet/*`) now starts with `ctx.connection.requestRejection(req)` — DSH Connection's Host/Origin fence blocks DNS rebinding and cross-site requests, and the browser login cookie authenticates the caller (401/403). Previously these routes lived outside DSH's authentication (balance/usage readable and settings writable without a token). The settings POST additionally requires `application/json` (415) and a valid ops shape (400); `SECURITY.md` documents the model.
+- **🧰 Also**: `lib/types/index.d.ts` now lists every Config field (`posX/posY/hidden/bubbleNotice/bubbleWork/cost*/notify*`) and uses the `whalePetCost` name; the Chinese README settings overview now matches the three-state button group and bubble switches; **175 tests pass** (4 account-balance route tests, 5 shaping tests, 4 authentication/settings-POST tests).
+
 ### 0.3.10
 - **Fixes [issue #11](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/11): the background-task bubble pasted the whole command line.** DSH's `tool-pwsh` / `tool-bash` register background jobs with `label: args.command`, and the old code spliced that straight into the bubble — a 357-character command filled the screen.
   - **The bubble is now "kind + duration"**: `[ PowerShell 命令 · 用时 3 秒 ] 搞定啦～`, and the command text never enters the bubble. Kinds map over the four DSH registers (`bash` → "Shell 命令", `pwsh` → "PowerShell 命令", `pty-send` → "终端命令", `workflow` → "工作流"). An **unknown kind** (the plugin subscribes with `owners: 'all'`, so other plugins' jobs arrive too) is only shown when its label is ≤24 characters after whitespace collapsing, otherwise it falls back to "后台任务" — length decides, with no attempt to guess "does this look like a command"; with no start/finish timestamps only the kind is shown, so there is no "用时 0 秒".
@@ -395,7 +401,7 @@ dsh-whale-girl-pet/
 ## 🛠️ Development
 
 ```sh
-npm test                          # 160 tests; scripts/dsh-resolve.mjs supplies the host-provided deps
+npm test                          # 175 tests; scripts/dsh-resolve.mjs supplies the host-provided deps
 ```
 
 - The browser bundle is a **hand-written** `window.__ModuleLoader__.load({ id, factory })` file with no build step: edit `lib/client.js` and restart `dsh web`.

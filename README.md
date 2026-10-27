@@ -125,7 +125,7 @@
 - 8:00–10:00 睡眼惺忪 · 12:00 吃盒饭（每天一次）· 23:00–3:00 迷糊犯困
 
 ### ⚙️ 设置面板（DSH 设置 → 桌宠配置）
-番茄钟提醒（间隔可调）· 深夜关怀 · 随机小剧场 · **漫游开关** · **按钮位置（左/右）** · **看板历史补扫开关** · **看板窗口天数** · 长任务阈值 · 天气城市，全部即时生效、重启不丢。
+番茄钟提醒（间隔可调）· 深夜关怀 · 随机小剧场 · **漫游开关** · **按钮组（左/右/关闭）** · **提醒气泡 / 工作输出气泡开关** · **看板历史补扫开关** · **看板窗口天数** · 长任务阈值 · 天气城市，全部即时生效、重启不丢。
 
 ### 🎨 46+ 透明动画
 全部透明 WebM（VP9 alpha），双缓冲交叉淡入切换零空白，落地对齐统一，支持 `prefers-reduced-motion`。
@@ -221,6 +221,12 @@ dsh plugin --profile web add dsh-whale-girl-pet-0.3.0.tgz
 ---
 
 ## 📝 更新记录
+
+### 0.3.11
+- **🎛️ 按钮组三态 + 两个气泡开关（来自 [PR #15](https://github.com/yanzwzz/dsh-whale-girl-pet/pull/15)，感谢 @lengqiuqiuqiu）**：`buttonSide` 由 `left/right` 扩成 `left/right/off`（复用字段，旧配置原样生效；非法值归一成 `left`），选「关闭」时整组 ☁️💰🍪📊 不渲染，宠物本体、费用 pill、角标与提示音照旧；头顶气泡拆成 **`bubbleNotice`**（任务完成/失败、回来汇总、天气/余额/喂食、番茄钟等提醒）与 **`bubbleWork`**（干活时逐字打出的工作输出）两个独立开关，默认全开。三个显示项改成订阅设置快照即时生效（值不变不重渲染），关掉时立刻收起在途气泡/看板，重新打开且 Agent 在干活时接回打字机。
+- **💰 账号登录也能查余额**：没配 `DEEPSEEK_API_KEY`（或 Key 失效 401/网络失败）时，`/api/whale-balance` 自动回退到 DSH 登录账号的开放平台钱包（`ctx.deepseekAccount.getBalance()`，充值余额 + 赠金余额合计）；有可用 Key 时行为完全不变。两条路都不通时气泡同时提示"没配 Key / 没登录账号"。
+- **🔒 宿主路由鉴权（安全修复）**：`/api/whale-*`、`/api/whale-balance`、`/pet/*` 每条路由第一行都调 `ctx.connection.requestRejection(req)`（DSH Connection 的 Host/Origin fence 挡 DNS rebinding 与跨站请求、浏览器登录 cookie 鉴权；401/403）。此前这些路由在 DSH 鉴权之外（无 token 也能读余额/用量、POST 改设置）。设置 POST 另加 `application/json` 限定（415）、ops 形态校验（400），并在 `SECURITY.md` 补安全模型说明。
+- **🧰 其他**：`lib/types/index.d.ts` 补全 Config 字段（含 `posX/posY/hidden/bubbleNotice/bubbleWork/cost*/notify*`）并修正 `whalePetCost` 命名；中文 README 设置面板概述同步三态按钮组与气泡开关；测试 **175 项**全部通过（新增账号余额 4 项 + 余额整形 5 项 + 路由鉴权/设置 POST 4 项）。
 
 ### 0.3.10
 - **修复 [issue #11](https://github.com/yanzwzz/dsh-whale-girl-pet/issues/11)：后台任务完成气泡把整条命令原文塞进来**。DSH 的 `tool-pwsh` / `tool-bash` 注册后台任务时把整条 `args.command` 当 `job.label`，旧实现直接 `'「' + label + '」'` 拼进气泡 —— 357 字符的命令能占满一屏。
@@ -406,7 +412,7 @@ dsh-whale-girl-pet/
 ## 🛠️ 开发
 
 ```sh
-npm test                          # 跑单测（160 项；scripts/dsh-resolve.mjs 把宿主提供的依赖兜出来）
+npm test                          # 跑单测（175 项；scripts/dsh-resolve.mjs 把宿主提供的依赖兜出来）
 ```
 
 - 客户端 bundle 是**手写**的 `window.__ModuleLoader__.load({ id, factory })` 形态，零构建步骤。

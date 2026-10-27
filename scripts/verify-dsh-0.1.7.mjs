@@ -37,6 +37,7 @@
 import { pathToFileURL } from 'node:url'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 
 /** 插件根目录（本脚本所在 scripts/ 的上一级）——换机器/换检出位置都不用改脚本。 */
 const PET_ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -142,6 +143,9 @@ const shellStub = {
 }
 /** credentials 服务。 */
 const credentialsStub = { resolve: async () => undefined }
+/** connection 服务：真实 Web 组合里提供 Host/Origin fence + 浏览器会话认证。
+ *  这里默认放行（undefined = 接受），需要验证拦截时把 rejection 设成 401 / 403。 */
+const connectionStub = { rejection: undefined, requestRejection() { return this.rejection } }
 
 const ctx = {
   // loader fiber：entry.options.id 就是 settings 表单寻址用的 ns；
@@ -171,6 +175,7 @@ const ctx = {
     if (name === 'timer') return timerStub
     if (name === 'shell') return shellStub
     if (name === 'credentials') return credentialsStub
+    if (name === 'connection') return connectionStub
     if (name === 'sandboxPolicy') return { resolve: () => undefined }
     if (name === 'agents') return { roots: () => [], list: () => [{ id: 'agent-1', status: 'running' }] }
     return undefined
@@ -232,7 +237,7 @@ const feed = (sessionId, header, sink, turn) => {
 }
 feed('root-1', rootHeader, rootEvents, 1)
 feed('child-1', childHeader, childEvents, 1)
-/** 打一个路由：返回 `{ status, json }`。 */
+/** 打一个路由：返回 `{ status, json }`。body 用最小 Readable 替身喂给 readBody。 */
 const hit = async (path, options = {}) => {
   const route = routes.find(item => item.path === path)
   if (route === undefined) throw new Error(`route ${path} not registered`)
@@ -243,13 +248,23 @@ const hit = async (path, options = {}) => {
     writeHead(status, headers) { this.statusCode = status; this.headers = headers },
     end(body) { if (body !== undefined) chunks.push(String(body)) },
   }
-  const req = { method: options.method ?? 'GET', url: options.url ?? path }
+  const req = Readable.from(options.body === undefined ? [] : [options.body])
+  req.method = options.method ?? 'GET'
+  req.url = options.url ?? path
+  req.headers = options.headers ?? {}
   await route.handler(req, res)
   const text = chunks.join('')
   let json
   try { json = JSON.parse(text) } catch { json = undefined }
   return { status: res.statusCode, json, text }
 }
+
+// 路由鉴权：DSH Web 组合的 connection 服务拒绝时，handler 不得执行
+connectionStub.rejection = 401
+const blocked = await hit('/api/whale-pet/state')
+check('路由鉴权：connection 拒绝时返回 401 且不执行 handler',
+  blocked.status === 401 && blocked.text === 'unauthorized', JSON.stringify(blocked))
+connectionStub.rejection = undefined
 
 const balance = await hit('/api/whale-balance')
 console.log(`  /api/whale-balance → ${balance.status} usage=${JSON.stringify(balance.json && balance.json.usage)}`)
@@ -270,18 +285,11 @@ console.log('\n[4] 设置写回：ctx.settings.mutate(entryId, ops)')
 const write = await hit('/api/whale-pet/settings', {
   method: 'POST',
   url: '/api/whale-pet/settings',
+  headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ ops: [{ op: 'set', path: ['city'], value: '济南' }] }),
 })
-// handler 从 req 读 body：这里用最小 Readable 替身重打一次
-if (write.status === 400) {
-  const route = routes.find(item => item.path === '/api/whale-pet/settings')
-  const res = { statusCode: 0, writeHead(status) { this.statusCode = status }, end() {} }
-  const { Readable } = await import('node:stream')
-  const req = Readable.from([JSON.stringify({ ops: [{ op: 'set', path: ['city'], value: '济南' }] })])
-  req.method = 'POST'
-  req.url = '/api/whale-pet/settings'
-  await route.handler(req, res)
-}
+console.log(`  settings write → ${write.status} ${write.text}`)
+check('设置 POST 只收 application/json 且写回成功', write.status === 200, write.text)
 console.log(`  settings writes: ${JSON.stringify(registered.settingsWrites)}`)
 check('mutate() 用 entry id "pet" 寻址', registered.settingsWrites[0]?.ns === 'pet',
   JSON.stringify(registered.settingsWrites))
