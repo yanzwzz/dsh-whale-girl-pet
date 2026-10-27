@@ -92,6 +92,8 @@ The fourth button beside the pet opens a **hand-written inline SVG dashboard (ze
 ### 💰 Balance & today's usage (💰 button)
 Account balance + today's tokens + today's cost (peak/off-peak split, plus the hit/miss/output breakdown), via the official balance API.
 
+> **Account sign-in works too**: with `DEEPSEEK_API_KEY` set it uses the official `api.deepseek.com/user/balance` endpoint (unchanged); with **no key, or a key that fails (401/network error), it falls back to the DSH-signed-in DeepSeek account** through `ctx.deepseekAccount.getBalance()` (topped-up + granted wallet balances). So DSH with account sign-in and no API key still shows a balance; when neither path works the bubble says both key and account are missing.
+
 > **"Today's cost" is an internal estimate that includes subagent sessions and pre-restart history**: it comes from the time-bucketed ledger (live folding across **all** sessions plus an on-demand back-scan of persisted sessions), not from "whatever sessions happen to be live". So subagent spend and anything already spent earlier today before a restart are both counted.
 
 ### 💴 Session cost pill (under the composer)

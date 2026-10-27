@@ -58,6 +58,9 @@ function makeCtx(options = {}) {
     settings: { writable: options.writable !== false, mutate: async (ns, ops) => { mutations.push({ ns, ops }); } },
     get: (name) => {
       if (name === 'credentials') return options.credentials;
+      if (name === 'deepseekAccount') return options.deepseekAccount;
+      if (name === 'connection') return options.connection;
+      if (name === 'clientModules') return options.clientModules;
       if (name === 'timer') return { interval: () => () => {}, timeout: () => () => {} };
       if (name === 'agents') return options.agents !== undefined ? options.agents : { list: () => [], roots: () => [] };
       if (name === 'sessions') return options.sessions;
@@ -94,7 +97,7 @@ function makeJobs() {
 }
 
 /** 打一条已注册的路由，返回 { status, json, text }。 */
-async function hit(routes, path, { method = 'GET', url = path, body } = {}) {
+async function hit(routes, path, { method = 'GET', url = path, body, headers = {} } = {}) {
   const route = routes.find((r) => r.path === path);
   assert.ok(route !== undefined, '路由未注册：' + path);
   let status = 0;
@@ -107,7 +110,7 @@ async function hit(routes, path, { method = 'GET', url = path, body } = {}) {
   // 请求体：readBody 走 req.on('data')/('end')，这里按需同步喂给它
   const chunks = body === undefined ? [] : [String(body)];
   const req = {
-    method, url, headers: {}, destroy: () => {},
+    method, url, headers: Object.assign({}, headers), destroy: () => {},
     on: (event, callback) => {
       if (event === 'data') { for (const chunk of chunks) callback(chunk); }
       else if (event === 'end') callback();
@@ -189,6 +192,7 @@ test('余额路由：没有 key 与 HTTP 401 的文案', async () => {
   const missing = await hit(noKey.routes, '/api/whale-balance');
   assert.equal(missing.status, 502);
   assert.ok(missing.json.error.includes('DEEPSEEK_API_KEY'), missing.json.error);
+  assert.ok(missing.json.error.includes('账号'), '两条路都没有时必须同时提示账号登录：' + missing.json.error);
 
   const withKey = makeCtx({ credentials: { resolve: async () => ({ value: 'sk-test-123456' }) } });
   apply(withKey.ctx, withKey.ctx.fiber.config);
@@ -198,6 +202,96 @@ test('余额路由：没有 key 与 HTTP 401 的文案', async () => {
   assert.equal(unauthorized.status, 502);
   assert.ok(unauthorized.json.error.includes('HTTP 401'), unauthorized.json.error);
   assert.ok(unauthorized.json.ok === false);
+});
+
+test('余额路由：没有 API Key 但有 DSH 账号登录时，走 deepseekAccount 的平台钱包', async () => {
+  const clients = [];
+  let fetchCalls = 0;
+  const h = makeCtx({
+    deepseekAccount: {
+      getBalance: async (client) => {
+        clients.push(client);
+        return {
+          status: 'ready',
+          value: [{ currency: 'CNY', balance: '10.50' }],
+          bonusWallets: [{ currency: 'CNY', balance: '2.25' }],
+        };
+      },
+    },
+    // web 启动图里的 DSH 版本（账号服务用来拼 x-client-version）
+    clientModules: { graph: () => ({ release: { version: '0.2.1-rc.3' } }) },
+  });
+  apply(h.ctx, h.ctx.fiber.config);
+  const result = await withFetch(async () => {
+    fetchCalls += 1;
+    throw new Error('没有 Key 时不得打 api.deepseek.com');
+  }, () => hit(h.routes, '/api/whale-balance', { headers: { 'accept-language': 'zh-CN,zh;q=0.9' } }));
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.ok, true);
+  assert.equal(result.json.currency, 'CNY');
+  assert.equal(result.json.total, '12.75');
+  assert.equal(result.json.granted, '2.25');
+  assert.equal(result.json.topped, '10.50');
+  assert.equal(fetchCalls, 0, '账号路径不得再调官方 API Key 余额接口');
+  assert.equal(clients.length, 1, '账号服务必须被调用一次');
+  assert.deepEqual(Object.keys(clients[0]).sort(), ['locale', 'timezoneOffsetSeconds', 'version']);
+  assert.equal(clients[0].version, '0.2.1-rc.3', 'version 应取自 web 启动图');
+  assert.equal(clients[0].locale, 'zh-CN', 'locale 应取自 Accept-Language');
+  assert.equal(typeof clients[0].timezoneOffsetSeconds, 'number');
+});
+
+test('余额路由：API Key 可用时不走账号路径（既有行为不变）', async () => {
+  let accountCalls = 0;
+  const h = makeCtx({
+    credentials: { resolve: async () => ({ value: 'sk-test-123456' }) },
+    deepseekAccount: {
+      getBalance: async () => {
+        accountCalls += 1;
+        return { status: 'ready', value: [{ currency: 'CNY', balance: '1.00' }], bonusWallets: [] };
+      },
+    },
+  });
+  apply(h.ctx, h.ctx.fiber.config);
+  const result = await withFetch(async () => ({
+    ok: true, status: 200,
+    json: async () => ({ balance_infos: [{ currency: 'CNY', total_balance: '8.88', granted_balance: '0', topped_up_balance: '8.88' }] }),
+  }), () => hit(h.routes, '/api/whale-balance'));
+
+  assert.equal(result.json.ok, true);
+  assert.equal(result.json.total, '8.88', '有可用 Key 时仍按 Key 口径显示');
+  assert.equal(accountCalls, 0, 'Key 成功就不该再打平台接口');
+});
+
+test('余额路由：Key 失效（401）时回退账号余额，不再被旧 Key 卡死', async () => {
+  const h = makeCtx({
+    credentials: { resolve: async () => ({ value: 'sk-stale' }) },
+    deepseekAccount: {
+      getBalance: async () => ({ status: 'ready', value: [{ currency: 'CNY', balance: '3.20' }], bonusWallets: [] }),
+    },
+  });
+  apply(h.ctx, h.ctx.fiber.config);
+  const result = await withFetch(async () => ({
+    ok: false, status: 401, text: async () => 'Authentication Fails',
+  }), () => hit(h.routes, '/api/whale-balance'));
+
+  assert.equal(result.status, 200);
+  assert.equal(result.json.ok, true);
+  assert.equal(result.json.total, '3.20');
+});
+
+test('余额路由：账号已登录但平台查询失败 / 账号服务异常时，分别给出明确错误', async () => {
+  const failed = makeCtx({ deepseekAccount: { getBalance: async () => ({ status: 'failed' }) } });
+  apply(failed.ctx, failed.ctx.fiber.config);
+  const r1 = await hit(failed.routes, '/api/whale-balance');
+  assert.equal(r1.status, 502);
+  assert.ok(r1.json.error.includes('账号余额查询失败'), r1.json.error);
+
+  const broken = makeCtx({ deepseekAccount: { getBalance: async () => { throw new Error('storage failed'); } } });
+  apply(broken.ctx, broken.ctx.fiber.config);
+  const r2 = await hit(broken.routes, '/api/whale-balance');
+  assert.equal(r2.status, 502);
+  assert.ok(r2.json.error.includes('账号服务异常'), r2.json.error);
 });
 
 test('issue #1：投影键被别的插件占用时，apply() 不得整体失败（桌宠不能消失）', () => {

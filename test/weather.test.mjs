@@ -185,6 +185,6 @@ test('issue #2 回归：宿主半侧不再经过 shell，两处查询都直连�
   assert.ok(source.includes("fetch('https://api.deepseek.com/user/balance'"), '余额必须直连官方接口');
   assert.ok(source.includes("'https://wttr.in/'"), '天气必须直连 wttr.in');
   assert.ok(source.includes('AbortSignal.timeout(FETCH_TIMEOUT_MS)'), '两处请求都必须带超时');
-  assert.ok(source.includes("import { shapeBalance } from './balance.js'"), '余额整形必须走纯函数模块');
+  assert.ok(/import \{[^}]*shapeBalance[^}]*\} from '\.\/balance\.js'/.test(source), '余额整形必须走纯函数模块');
   assert.ok(source.includes("import { nearestAreaName, nearestCoords, shapeWeather } from './weather.js'"), '天气整形必须走纯函数模块');
 });
