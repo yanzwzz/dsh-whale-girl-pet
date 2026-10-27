@@ -10,9 +10,11 @@
  * 覆盖：
  *   1) 路由清单（少一条就是功能消失）
  *   2) 天气：城市取自设置（回归 resolveConfig 作用域缺陷）+ 失败分支文案
- *   3) 余额：没有 key / 401 的文案
- *   4) issue #1：投影键撞名时 apply() 不得整体失败（DSH 会拒绝同名不同版本）
- *   5) 宿主与浏览器半侧的投影键必须一致（写错就是费用 pill 静默失灵）
+ *   3) 余额：没有 key / 401 文案 / 账号登录回退（DSH deepseekAccount）
+ *   4) 设置 POST：只收 application/json + ops 形态校验
+ *   5) 路由鉴权：connection.requestRejection 拒绝时必须 401/403 且无副作用
+ *   6) issue #1：投影键撞名时 apply() 不得整体失败（DSH 会拒绝同名不同版本）
+ *   7) 宿主与浏览器半侧的投影键必须一致（写错就是费用 pill 静默失灵）
  * 运行：node --test（在插件根目录）
  */
 import test from 'node:test';
@@ -508,7 +510,11 @@ test('issue #10：设置路由把尺寸/位置的 set 与 unset 原样透传给 
     { op: 'set', path: ['posX'], value: 800 },
     { op: 'set', path: ['posY'], value: 500 },
   ];
-  const saved = await hit(h.routes, '/api/whale-pet/settings', { method: 'POST', body: JSON.stringify({ ops }) });
+  const saved = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops }),
+  });
   assert.equal(saved.status, 200, '保存必须 200');
   assert.deepEqual(saved.json, { ok: true });
   assert.equal(h.mutations.length, 1, '必须正好调用一次 mutate');
@@ -517,7 +523,11 @@ test('issue #10：设置路由把尺寸/位置的 set 与 unset 原样透传给 
 
   // 面板「恢复默认角落」：清掉像素位置 → 回到 position 角落
   const resetOps = [{ op: 'unset', path: ['posX'] }, { op: 'unset', path: ['posY'] }];
-  const reset = await hit(h.routes, '/api/whale-pet/settings', { method: 'POST', body: JSON.stringify({ ops: resetOps }) });
+  const reset = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops: resetOps }),
+  });
   assert.equal(reset.status, 200);
   assert.deepEqual(h.mutations[1].ops, resetOps, 'unset 必须一并透传（否则清不掉像素位置）');
 });
@@ -536,6 +546,101 @@ test('issue #10：设置读接口同时返回 value 与 writable（只读实例�
   apply(readOnly.ctx, readOnly.ctx.fiber.config);
   const denied = await hit(readOnly.routes, '/api/whale-pet/settings');
   assert.equal(denied.json.writable, false, '只读实例必须如实上报 writable=false');
+});
+
+// ---------------------------------------------------------------------------
+// 安全：宿主路由必须接 DSH Connection 的鉴权（Host/Origin fence + 浏览器会话）
+// ---------------------------------------------------------------------------
+test('路由鉴权：connection 拒绝时所有宿主路由返回 401，处理器不执行', async () => {
+  const seen = [];
+  const h = makeCtx({
+    connection: {
+      requestRejection: (req) => {
+        seen.push(req.method + ' ' + req.url);
+        return 401;
+      },
+    },
+  });
+  apply(h.ctx, h.ctx.fiber.config);
+  for (const path of ['/api/whale-pet/state', '/api/whale-balance', '/api/whale-pet/weather',
+    '/api/whale-pet/usage', '/api/whale-pet/subtree-cost', '/api/whale-pet/settings', '/pet']) {
+    const res = await hit(h.routes, path);
+    assert.equal(res.status, 401, path + ' 必须先被 connection 拒绝');
+    assert.equal(res.text, 'unauthorized', path + ' 的拒绝响应不得泄漏数据');
+  }
+  assert.equal(seen.length, 7, '每条路由都必须先问 connection.requestRejection');
+});
+
+test('路由鉴权：写接口被拒时不得调用 settings.mutate（403 分支）', async () => {
+  const h = makeCtx({ connection: { requestRejection: () => 403 } });
+  apply(h.ctx, h.ctx.fiber.config);
+  const denied = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops: [{ op: 'set', path: ['size'], value: 300 }] }),
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.text, 'forbidden');
+  assert.equal(h.mutations.length, 0, '被拒请求绝不得写设置');
+});
+
+test('路由鉴权：没有 connection 服务时不做鉴权（非 Web composition 保持旧行为）', async () => {
+  const h = makeCtx({ credentials: { resolve: async () => ({ value: 'sk-test-123456' }) } });
+  apply(h.ctx, h.ctx.fiber.config);
+  const res = await withFetch(async () => ({
+    ok: true, status: 200,
+    json: async () => ({ balance_infos: [{ currency: 'CNY', total_balance: '1.00' }] }),
+  }), () => hit(h.routes, '/api/whale-balance'));
+  assert.equal(res.status, 200, '老版本 DSH / 非 Web 组合没有 connection 时保持既有行为');
+});
+
+test('设置 POST：必须是 application/json；ops 形态不合法直接 400，一律不调 mutate', async () => {
+  const h = makeCtx();
+  apply(h.ctx, h.ctx.fiber.config);
+  const validOps = [{ op: 'set', path: ['size'], value: 300 }];
+
+  const noType = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST', body: JSON.stringify({ ops: validOps }),
+  });
+  assert.equal(noType.status, 415, '缺 content-type 必须 415');
+  const textPlain = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ ops: validOps }),
+  });
+  assert.equal(textPlain.status, 415, 'text/plain（跨站简单请求）必须 415');
+  const form = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'ops=' + encodeURIComponent(JSON.stringify(validOps)),
+  });
+  assert.equal(form.status, 415, '表单编码必须 415');
+
+  const badOps = [
+    undefined,
+    [],
+    [{ op: 'delete', path: ['size'] }],
+    [{ op: 'set', path: [] }],
+    [{ op: 'set', path: ['size'] }],
+    [{ op: 'set', path: [1], value: 1 }],
+    'oops',
+  ];
+  for (const ops of badOps) {
+    const res = await hit(h.routes, '/api/whale-pet/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ ops }),
+    });
+    assert.equal(res.status, 400, '非法 ops 必须 400：' + JSON.stringify(ops));
+  }
+  const badJson = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
+  });
+  assert.equal(badJson.status, 400, '坏 JSON 必须 400');
+  assert.equal(h.mutations.length, 0, '所有非法请求都不得写设置');
+
+  const good = await hit(h.routes, '/api/whale-pet/settings', {
+    method: 'POST', headers: { 'content-type': 'application/json; charset=utf-8' }, body: JSON.stringify({ ops: validOps }),
+  });
+  assert.equal(good.status, 200);
+  assert.equal(h.mutations.length, 1, '合法请求必须照旧透传');
+  assert.deepEqual(h.mutations[0].ops, validOps);
 });
 
 /**

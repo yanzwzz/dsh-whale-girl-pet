@@ -40,3 +40,23 @@ package.
 
 Reports about a DSH runtime vulnerability itself (not this plugin) should go to
 the DeepSeek Harness project instead.
+
+## Security model for the host routes (from 0.3.11)
+
+The host half registers its own HTTP routes on DSH's `webServer`
+(`/api/whale-pet/state`, `/api/whale-pet/settings`, `/api/whale-pet/weather`,
+`/api/whale-pet/usage`, `/api/whale-pet/subtree-cost`, `/api/whale-balance`, and the
+`/pet/*` asset route). DSH's web-server carrier owns no authentication, so every
+route first asks the DSH Connection service for a rejection
+(`ctx.connection.requestRejection(req)`): its Host/Origin fence refuses
+DNS-rebinding and cross-site requests (403), and its browser login cookie
+authenticates the caller (401). Route handlers never execute before that check.
+
+In compositions that provide no `connection` service (older DSH releases, non-Web
+compositions) the check is skipped and the surrounding composition owns the
+route-authentication policy, matching DSH's documented contract.
+
+`POST /api/whale-pet/settings` additionally accepts only `application/json`
+(415 otherwise), caps the body at 64 KiB, validates the ops shape, and DSH's
+settings service validates every path against the plugin schema — non-volatile
+fields and out-of-range values are rejected.

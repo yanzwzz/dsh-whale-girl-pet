@@ -420,6 +420,7 @@ npm test                          # 跑单测（160 项；scripts/dsh-resolve.mj
 - 确认页面跑的是哪版代码：浏览器控制台打印
   `localStorage.getItem('dsh-whale-pet.dashboard-layout')`，看**记忆版本号**（当前 `v:5`）。
 - 计费口径改动请同步更新 `test/usage.test.mjs` / `test/usage-ledger.test.mjs`；看板布局改动请更新 `test/dashboard-layout.test.mjs`（它用 `vm` 从 `client.js` 里抠出工厂源码来跑，**测的就是线上那份代码**）。
+- **宿主路由鉴权**：`/api/whale-*`、`/api/whale-balance`、`/pet/*` 每条路由的第一行都调 `ctx.connection.requestRejection(req)` —— DSH 的 `webServer` 载体本身不做认证，Host/Origin fence 挡 DNS rebinding 与跨站请求（403）、浏览器登录 cookie 再鉴权（401）。取不到 `connection` 服务（老 DSH / 非 Web composition）时跳过，由所在组合负责。`POST /api/whale-pet/settings` 另要求 `application/json`（否则 415）、64 KiB 上限与 ops 形态校验，最后再交给 DSH settings 按 schema 校验路径和值。
 
 ---
 

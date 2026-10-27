@@ -401,6 +401,7 @@ npm test                          # 160 tests; scripts/dsh-resolve.mjs supplies 
 - The browser bundle is a **hand-written** `window.__ModuleLoader__.load({ id, factory })` file with no build step: edit `lib/client.js` and restart `dsh web`.
 - To check which bundle the page actually runs, print `localStorage.getItem('dsh-whale-pet.dashboard-layout')` (it carries a version tag).
 - Pricing changes belong with `test/usage.test.mjs` / `test/usage-ledger.test.mjs`; layout changes with `test/dashboard-layout.test.mjs`, which extracts the layout factory **from `client.js` itself** and runs it in a `vm`, so it tests the shipped code rather than a copy.
+- **Host-route authentication**: every route (`/api/whale-*`, `/api/whale-balance`, `/pet/*`) starts with `ctx.connection.requestRejection(req)` — DSH's `webServer` carrier owns no authentication, so the Connection service supplies the Host/Origin fence (DNS rebinding / cross-site requests get 403) and browser login-cookie authentication (401). When no `connection` service exists (older DSH, non-Web compositions) the check is skipped and the surrounding composition owns that policy. `POST /api/whale-pet/settings` additionally requires `application/json` (415 otherwise), a 64 KiB body cap and an ops-shape check before DSH settings validates paths and values against the schema.
 
 ---
 
