@@ -6,7 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -280,6 +280,30 @@ test('MPRIS 隐身：#3 —— 动画 video 必须建在 stage 的 closed shadow
 
   // 五、单一来源：同一份 CSS 文本要给 light DOM 与 shadow 各注入一次
   assert.ok(source.includes("style.textContent = css"), 'shadow 里必须注入同一份 css 文本');
+});
+
+test('Safari 使用 animated WebP 保留透明边缘', () => {
+  const source = readFileSync(CLIENT_PATH, 'utf8');
+  // Safari 会把透明 WebM 画成黑底。这里保留 video 作为播放/事件时钟，
+  // 但视觉层改成同名的 animated WebP（alpha 不受 Safari 的 WebM 解码限制）。
+  assert.ok(source.includes("typeof navigator !== 'undefined'"), 'Safari 检测必须允许测试 VM 中不存在 navigator');
+  assert.ok(source.includes("'.dsh-pet-image{"), '必须存在 Safari WebP 视觉层样式');
+  assert.ok(source.includes("'.dsh-pet-video.is-safari{opacity:0!important}'"), 'Safari 中必须隐藏原始视频，避免黑底盖住 WebP');
+  assert.ok(source.includes("image.src = '/pet/thumb/' + encodeURIComponent(next) + '.webp?v=2#v=' + gen"), 'Safari 必须加载同名 animated WebP，并带缓存版本号');
+  assert.ok(source.includes("if (IS_SAFARI) el.classList.add('is-safari')"), 'Safari 的视频元素必须标记 is-safari');
+  assert.ok(source.includes('videoImageRef'), '必须维护 video 到 WebP 视觉层的映射');
+  assert.ok(source.includes('imageReady.then'), '必须等 WebP 加载完成后再切换前后台，避免空帧');
+
+  const host = readFileSync(HOST_PATH, 'utf8');
+  assert.ok(host.includes("'.webp': 'image/webp'"), '宿主路由必须返回 image/webp');
+
+  // 每个 WebM 都必须有配套 WebP；漏一个就会让 Safari 上某个动画退回黑底。
+  const thumbs = fileURLToPath(new URL('../assets/thumb', import.meta.url));
+  const webm = readdirSync(thumbs).filter(name => name.endsWith('.webm'));
+  assert.ok(webm.length > 0, '必须存在 WebM 动画');
+  for (const name of webm) {
+    assert.ok(existsSync(join(thumbs, name.replace(/\.webm$/, '.webp'))), '缺少 Safari WebP：' + name);
+  }
 });
 
 test('费用显示开关：五个显示位置各自受开关控制（与 dsh-cost-meter 重合时可关）', () => {
