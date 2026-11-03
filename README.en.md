@@ -124,6 +124,11 @@ Auto-sleeps after 5 idle minutes (fall asleep → sleeping loop → woken up).
 Pomodoro (interval adjustable) · late-night care · random chatter · **roam toggle** · **button group (left / right / off)** · **two bubble switches (notices / work output)** · **dashboard history backfill** · **dashboard window days** · long-task threshold · weather city. All live, persisted to `settings.yaml`.
 
 ### 🎨 46+ transparent animations
+
+> Safari cannot decode the alpha channel of VP9 WebM and paints transparent areas black.
+> Safari uses the matching 260×260 animated WebP asset (which preserves alpha) as the
+> visual layer while the WebM remains the playback clock; Chrome, Edge and Firefox keep the
+> native WebM alpha path.
 All transparent WebM (VP9 alpha), double-buffered crossfade with zero blank frames, unified ground alignment, `prefers-reduced-motion` friendly.
 
 ---
@@ -388,7 +393,7 @@ dsh-whale-girl-pet/
 │   ├── cost-projection.js  whalePetCost session projection (cost pills read this)
 │   ├── client.js           browser half: pet, bubbles, button stack, dashboard panel & layout, settings section
 │   └── types/              TypeScript declarations (types only)
-├── assets/thumb/           360×360 playback animations (shipped)
+├── assets/thumb/           360×360 WebM + 260×260 Safari WebP animations (shipped)
 ├── assets/preview/         README previews / donation QR
 ├── test/                   unit tests (node --test, not published)
 └── cordis.patch.yml        bundle patch that mounts the plugin row into the DSH config tree
